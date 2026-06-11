@@ -25,6 +25,7 @@
 *.pem
 *.md
 !README.md
+!STARTUP.md
 *.pdf
 *.doc
 *.docx
