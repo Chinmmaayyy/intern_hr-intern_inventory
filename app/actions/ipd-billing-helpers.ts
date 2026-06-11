@@ -1,0 +1,611 @@
+'use server';
+
+import { requireTenantContext } from '@/backend/tenant';
+import { logAudit } from '@/app/lib/audit';
+import { getRoomGSTRate } from '@/app/lib/gst';
+import { generateInvoiceNumber as genInvNum } from '@/app/lib/sequence-generator';
+
+function serialize<T>(data: T): T {
+    return JSON.parse(JSON.stringify(data, (_, value) =>
+        typeof value === 'object' && value !== null && value.constructor?.name === 'Decimal'
+            ? Number(value)
+            : value
+    ));
+}
+
+function formatIsoDate(d: Date): string {
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+/**
+ * Extract a canonical YYYY-MM-DD key from an invoice item description,
+ * regardless of the format the description uses.
+ *
+ * Supports:
+ *   "Ward - Room Charge [2026-05-27]"        → "2026-05-27"
+ *   "Ward - Room Charge (27/5/2026)"         → "2026-05-27"
+ *   "Ward - Room Charge (27/05/2026)"        → "2026-05-27"
+ *   "Ward - Room Charge 2026-05-27"          → "2026-05-27"
+ *
+ * Returning the same canonical key for any of these formats prevents
+ * duplicate Room/Nursing rows when legacy descriptions exist on the bill.
+ */
+function extractDayKey(description: string | null | undefined): string {
+    if (!description) return '';
+    // 1. ISO bracket format: [YYYY-MM-DD]
+    let m = description.match(/\[(\d{4}-\d{2}-\d{2})\]/);
+    if (m) return m[1];
+    // 2. India parens format: (D/M/YYYY) or (DD/MM/YYYY) or (D/M/YY)
+    m = description.match(/\((\d{1,2})\/(\d{1,2})\/(\d{2,4})\)/);
+    if (m) {
+        const d = m[1].padStart(2, '0');
+        const mo = m[2].padStart(2, '0');
+        const y = m[3].length === 2 ? `20${m[3]}` : m[3];
+        return `${y}-${mo}-${d}`;
+    }
+    // 3. Plain ISO anywhere in the description: YYYY-MM-DD
+    m = description.match(/(\d{4}-\d{2}-\d{2})/);
+    if (m) return m[1];
+    // 4. Fallback: full description (won't match any ISO key — so it skips dedup
+    //    for this row, leaving the legacy row in place but not creating new dupes)
+    return description;
+}
+
+/**
+ * Doctor autocomplete for the admission page. Returns active doctors matching
+ * `query` by name / username / specialty. Empty query returns the first `limit` doctors.
+ */
+export async function searchDoctorsForIPD(query: string, limit: number = 10) {
+    try {
+        const { db } = await requireTenantContext();
+        const q = (query || '').trim();
+        const where: any = { role: 'doctor', is_active: true };
+        if (q) {
+            where.OR = [
+                { name: { contains: q, mode: 'insensitive' } },
+                { username: { contains: q, mode: 'insensitive' } },
+                { specialty: { contains: q, mode: 'insensitive' } },
+            ];
+        }
+        const doctors = await db.user.findMany({
+            where,
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                specialty: true,
+                consultation_fee: true,
+            },
+            orderBy: { name: 'asc' },
+            take: limit,
+        });
+        return {
+            success: true as const,
+            data: doctors.map((d: any) => ({
+                id: d.id,
+                name: d.name || d.username || 'Unknown',
+                username: d.username,
+                specialty: d.specialty || null,
+                consultation_fee: d.consultation_fee != null ? Number(d.consultation_fee) : null,
+            })),
+        };
+    } catch (error: any) {
+        return { success: false as const, error: error.message };
+    }
+}
+
+/**
+ * Service master picker for the IPD manual-charge form. Reads from charge_catalog.
+ */
+export async function getIPDServiceCatalog(
+    query?: string,
+    category?: string,
+    limit: number = 30,
+) {
+    try {
+        const { db } = await requireTenantContext();
+        const q = (query || '').trim();
+
+        // Search charge_catalog
+        const catWhere: any = { is_active: true };
+        if (category) catWhere.category = category;
+        if (q) {
+            catWhere.OR = [
+                { item_name: { contains: q, mode: 'insensitive' } },
+                { item_code: { contains: q, mode: 'insensitive' } },
+            ];
+        }
+        const catalogItems = await db.charge_catalog.findMany({
+            where: catWhere, orderBy: { item_name: 'asc' }, take: limit,
+        });
+
+        // Search lab_test_inventory
+        const labWhere: any = { is_available: true };
+        if (q) {
+            labWhere.OR = [
+                { test_name: { contains: q, mode: 'insensitive' } },
+                { test_code: { contains: q, mode: 'insensitive' } },
+            ];
+        }
+        const labItems = await db.lab_test_inventory.findMany({
+            where: labWhere, orderBy: { test_name: 'asc' }, take: limit,
+        });
+
+        // Search IPD service master
+        const ipdWhere: any = { is_active: true };
+        if (q) {
+            ipdWhere.OR = [
+                { service_name: { contains: q, mode: 'insensitive' } },
+                { service_code: { contains: q, mode: 'insensitive' } },
+            ];
+        }
+        const ipdItems = await db.ipdServiceMaster.findMany({
+            where: ipdWhere, orderBy: { service_name: 'asc' }, take: limit,
+        });
+
+        // Merge into unified format
+        const all = [
+            ...catalogItems.map((s: any) => ({
+                id: s.id, item_name: s.item_name, item_code: s.item_code || '',
+                default_price: Number(s.default_price),
+                service_category: s.service_category || s.category || 'Services',
+                category: s.category, source: 'catalog',
+            })),
+            ...labItems.map((s: any) => ({
+                id: `lab-${s.id}`, item_name: s.test_name, item_code: s.test_code || '',
+                default_price: Number(s.price),
+                service_category: s.category || 'Laboratory',
+                category: 'Laboratory', source: 'lab',
+            })),
+            ...ipdItems.map((s: any) => ({
+                id: `ipd-${s.id}`, item_name: s.service_name, item_code: s.service_code || '',
+                default_price: Number(s.default_rate),
+                service_category: s.service_category || 'IPD Services',
+                category: s.service_category, source: 'ipd',
+            })),
+        ].slice(0, limit);
+
+        return { success: true as const, data: serialize(all) };
+    } catch (error: any) {
+        return { success: false as const, error: error.message };
+    }
+}
+
+/**
+ * Idempotent per-day accrual of Room + Nursing charges for an active IPD admission.
+ * For each calendar day from admission_date to today (inclusive) the invoice is
+ * guaranteed to have one Room row and one Nursing row tagged with the ISO day.
+ * Safe to call on every page load — reruns are no-ops once today's rows exist.
+ */
+export async function ensureIPDRoomChargesAccrued(admissionId: string) {
+    try {
+        const { db, organizationId } = await requireTenantContext();
+
+        const admission = await db.admissions.findUnique({
+            where: { admission_id: admissionId },
+            include: { ward: true, bed: { include: { wards: true } } },
+        });
+        if (!admission) return { success: false as const, error: 'Admission not found' };
+        if (admission.status !== 'Admitted') {
+            return { success: true as const, data: { skipped: true, reason: 'Not admitted', added: 0 } };
+        }
+
+        const ward = admission.ward || admission.bed?.wards;
+        if (!ward) {
+            return { success: false as const, error: 'Ward info not found — assign a bed first' };
+        }
+
+        const bedTier = admission.bed?.pricing_tier || 'Base';
+        const multiplier = bedTier === 'Premium' ? 1.5 : bedTier === 'Critical' ? 2.0 : 1.0;
+        const roomRate = Number(ward.cost_per_day || 0) * multiplier;
+        const nursingRate = Number(ward.nursing_charge || 0) * multiplier;
+
+        if (roomRate <= 0 && nursingRate <= 0) {
+            return {
+                success: false as const,
+                error: `Ward "${ward.ward_name}" has no cost_per_day or nursing_charge configured`,
+            };
+        }
+
+        // Locate or create the active IPD invoice
+        let invoice = await db.invoices.findFirst({
+            where: { admission_id: admissionId, status: { not: 'Cancelled' } },
+        });
+        if (!invoice) {
+            invoice = await db.invoices.create({
+                data: {
+                    invoice_number: await genInvNum(organizationId, 'IPD', true, db),
+                    patient_id: admission.patient_id,
+                    admission_id: admissionId,
+                    invoice_type: 'IPD',
+                    status: 'Draft',
+                    organizationId,
+                },
+            });
+        }
+
+        // Determine day span: admission day → today (inclusive)
+        const admitDate = new Date(admission.admission_date);
+        admitDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const totalDays = Math.max(
+            1,
+            Math.floor((today.getTime() - admitDate.getTime()) / (1000 * 60 * 60 * 24)) + 1,
+        );
+
+        // If an active (non-broken-open) IPD package is attached, suppress Room+Nursing
+        // accrual for the days covered by the package — Room Rent + Nursing Care are
+        // already included in the package price (per Axten pricelist inclusions).
+        // Days BEYOND validity_days still accrue normally per the "extended stay" rule.
+        const activePkg = await db.ipdAdmissionPackage.findFirst({
+            where: { admission_id: admissionId, is_broken_open: false },
+            include: { package: { select: { validity_days: true, package_name: true } } },
+        });
+        let packageCoveredUntil: Date | null = null;
+        if (activePkg) {
+            const validityDays = activePkg.package.validity_days || 7;
+            packageCoveredUntil = new Date(admitDate);
+            packageCoveredUntil.setDate(admitDate.getDate() + validityDays - 1);
+            packageCoveredUntil.setHours(23, 59, 59, 999);
+        }
+
+        // Fetch existing Room + Nursing items to de-dupe by ISO day.
+        // We dedup by BOTH ref_id AND date-key extracted from description
+        // (defense-in-depth — keeps us safe against legacy data with mixed
+        //  description formats AND against either accrual path skipping ref_id).
+        const existing = await db.invoice_items.findMany({
+            where: {
+                invoice_id: invoice.id,
+                service_category: { in: ['Room', 'Nursing'] },
+            },
+            select: { service_category: true, description: true, ref_id: true },
+        });
+
+        const roomRefIds = new Set<string>();
+        const nursingRefIds = new Set<string>();
+        const existingRoomKeys = new Set<string>();
+        const existingNursingKeys = new Set<string>();
+        for (const e of existing) {
+            const key = extractDayKey(e.description);
+            if (e.service_category === 'Room') {
+                if (e.ref_id) roomRefIds.add(e.ref_id);
+                if (key) existingRoomKeys.add(key);
+            } else if (e.service_category === 'Nursing') {
+                if (e.ref_id) nursingRefIds.add(e.ref_id);
+                if (key) existingNursingKeys.add(key);
+            }
+        }
+
+        // GST: ICU/CCU/NICU exempt regardless of rate; other wards 5% if rent > ₹5,000/day
+        const roomTaxRate = getRoomGSTRate(ward.ward_type, roomRate);
+        const rowsToInsert: any[] = [];
+
+        for (let i = 0; i < totalDays; i++) {
+            const day = new Date(admitDate);
+            day.setDate(admitDate.getDate() + i);
+            const key = formatIsoDate(day);
+
+            // Skip days covered by the active package — Room & Nursing already
+            // included in the package price.
+            if (packageCoveredUntil && day <= packageCoveredUntil) continue;
+
+            const roomRef = `room_${admissionId}_${key}`;
+            const nursingRef = `nursing_${admissionId}_${key}`;
+
+            if (
+                roomRate > 0 &&
+                !roomRefIds.has(roomRef) &&
+                !existingRoomKeys.has(key)
+            ) {
+                const taxAmount = (roomRate * roomTaxRate) / 100;
+                rowsToInsert.push({
+                    invoice_id: invoice.id,
+                    department: 'Room',
+                    description: `${ward.ward_name} - Room Charge [${key}]`,
+                    quantity: 1,
+                    unit_price: roomRate,
+                    total_price: roomRate,
+                    discount: 0,
+                    net_price: roomRate,
+                    tax_rate: roomTaxRate,
+                    tax_amount: taxAmount,
+                    hsn_sac_code: roomRate > 5000 ? '9963' : '9993',
+                    service_category: 'Room',
+                    ref_id: roomRef,
+                    organizationId,
+                });
+                // Track within this batch too, so we don't insert the same key twice
+                roomRefIds.add(roomRef);
+                existingRoomKeys.add(key);
+            }
+
+            if (
+                nursingRate > 0 &&
+                !nursingRefIds.has(nursingRef) &&
+                !existingNursingKeys.has(key)
+            ) {
+                rowsToInsert.push({
+                    invoice_id: invoice.id,
+                    department: 'Nursing',
+                    description: `Nursing Charge [${key}]`,
+                    quantity: 1,
+                    unit_price: nursingRate,
+                    total_price: nursingRate,
+                    discount: 0,
+                    net_price: nursingRate,
+                    tax_rate: 0,
+                    tax_amount: 0,
+                    hsn_sac_code: '9993',
+                    service_category: 'Nursing',
+                    ref_id: nursingRef,
+                    organizationId,
+                });
+                nursingRefIds.add(nursingRef);
+                existingNursingKeys.add(key);
+            }
+        }
+
+        if (rowsToInsert.length === 0) {
+            return {
+                success: true as const,
+                data: { invoice_id: invoice.id, added: 0, totalDays, roomRate, nursingRate },
+            };
+        }
+
+        await db.$transaction(rowsToInsert.map((d) => db.invoice_items.create({ data: d })));
+
+        // Recalculate invoice totals
+        const items = await db.invoice_items.findMany({ where: { invoice_id: invoice.id } });
+        const totalDiscount = items.reduce((s: number, it: any) => s + Number(it.discount || 0), 0);
+        const totalTax = items.reduce((s: number, it: any) => s + Number(it.tax_amount || 0), 0);
+        const totalPrice = items.reduce((s: number, it: any) => s + Number(it.total_price || 0), 0);
+        const totalNet = items.reduce((s: number, it: any) => s + Number(it.net_price || 0), 0);
+        const netAmount = totalNet + totalTax;
+        const paid = Number(invoice.paid_amount || 0);
+
+        await db.invoices.update({
+            where: { id: invoice.id },
+            data: {
+                total_amount: totalPrice,
+                total_discount: totalDiscount,
+                total_tax: totalTax,
+                net_amount: netAmount,
+                cgst_amount: totalTax / 2,
+                sgst_amount: totalTax / 2,
+                balance_due: netAmount - paid,
+            },
+        });
+
+        await logAudit({
+            action: 'IPD_ROOM_CHARGES_ACCRUED',
+            module: 'IPD',
+            entity_type: 'admission',
+            entity_id: admissionId,
+            details: JSON.stringify({
+                added: rowsToInsert.length,
+                totalDays,
+                roomRate,
+                nursingRate,
+                invoiceId: invoice.id,
+            }),
+        });
+
+        return {
+            success: true as const,
+            data: {
+                invoice_id: invoice.id,
+                added: rowsToInsert.length,
+                totalDays,
+                roomRate,
+                nursingRate,
+            },
+        };
+    } catch (error: any) {
+        console.error('ensureIPDRoomChargesAccrued error:', error);
+        return { success: false as const, error: error.message };
+    }
+}
+
+/**
+ * Seed default IPD master data (wards, beds, charge_catalog) for a tenant when empty.
+ * Idempotent per-category: skips any table that already has rows.
+ */
+export async function ensureIPDDemoMasterData() {
+    try {
+        const { db, organizationId } = await requireTenantContext();
+
+        const result: { wards: number; beds: number; services: number } = {
+            wards: 0,
+            beds: 0,
+            services: 0,
+        };
+
+        // Seed wards if empty
+        const wardCount = await db.wards.count({ where: { organizationId } });
+        if (wardCount === 0) {
+            const defaults = [
+                { ward_name: 'General Ward', ward_type: 'General', cost_per_day: 500, nursing_charge: 150 },
+                { ward_name: 'Semi-Private', ward_type: 'Semi', cost_per_day: 1500, nursing_charge: 300 },
+                { ward_name: 'Private Room', ward_type: 'Private', cost_per_day: 3000, nursing_charge: 500 },
+                { ward_name: 'Deluxe Suite', ward_type: 'Suite', cost_per_day: 6000, nursing_charge: 1000 },
+                { ward_name: 'ICU', ward_type: 'ICU', cost_per_day: 5000, nursing_charge: 1500 },
+                { ward_name: 'NICU', ward_type: 'NICU', cost_per_day: 6000, nursing_charge: 1800 },
+                { ward_name: 'Maternity', ward_type: 'Maternity', cost_per_day: 1500, nursing_charge: 400 },
+                { ward_name: 'Isolation', ward_type: 'Isolation', cost_per_day: 4000, nursing_charge: 1200 },
+            ];
+            await db.$transaction(
+                defaults.map((w) =>
+                    db.wards.create({ data: { ...w, is_active: true, organizationId } }),
+                ),
+            );
+            result.wards = defaults.length;
+        }
+
+        // Seed beds if empty
+        const bedCount = await db.beds.count({ where: { organizationId } });
+        if (bedCount === 0) {
+            const allWards = await db.wards.findMany({
+                where: { organizationId, is_active: true },
+            });
+            const bedRows: any[] = [];
+            for (const w of allWards) {
+                const perWard = w.ward_type === 'ICU' || w.ward_type === 'NICU' ? 6 : 10;
+                const prefix = (w.ward_name || 'BED')
+                    .replace(/\s+/g, '')
+                    .toUpperCase()
+                    .slice(0, 6);
+                const tier =
+                    w.ward_type === 'ICU' || w.ward_type === 'NICU'
+                        ? 'Critical'
+                        : w.ward_type === 'Suite' || w.ward_type === 'Private'
+                            ? 'Premium'
+                            : 'Base';
+                for (let i = 1; i <= perWard; i++) {
+                    bedRows.push({
+                        bed_id: `BED-${prefix}-${String(i).padStart(2, '0')}`,
+                        ward_id: w.ward_id,
+                        status: 'Available',
+                        bed_category: w.ward_type,
+                        pricing_tier: tier,
+                        organizationId,
+                    });
+                }
+            }
+            if (bedRows.length > 0) {
+                await db.$transaction(bedRows.map((d) => db.beds.create({ data: d })));
+                result.beds = bedRows.length;
+            }
+        }
+
+        // Seed charge_catalog defaults if empty
+        const svcCount = await db.charge_catalog.count({ where: { organizationId } });
+        if (svcCount === 0) {
+            const defaults = [
+                { category: 'Consultation', item_code: 'CONS-GEN', item_name: 'General Consultation', default_price: 500, department: 'OPD', service_category: 'Consultation', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Consultation', item_code: 'CONS-SPEC', item_name: 'Specialist Consultation', default_price: 1000, department: 'OPD', service_category: 'Consultation', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'DoctorVisit', item_code: 'VISIT-ROUND', item_name: 'Doctor Round Visit', default_price: 300, department: 'IPD', service_category: 'DoctorVisit', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'DoctorVisit', item_code: 'VISIT-EMERG', item_name: 'Emergency Doctor Visit', default_price: 800, department: 'IPD', service_category: 'DoctorVisit', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Procedure', item_code: 'PROC-MINOR', item_name: 'Minor Procedure', default_price: 2000, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Procedure', item_code: 'PROC-MAJOR', item_name: 'Major Procedure', default_price: 10000, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Procedure', item_code: 'PROC-DRESS', item_name: 'Dressing Change', default_price: 200, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Procedure', item_code: 'PROC-IV', item_name: 'IV Line Insertion', default_price: 250, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Procedure', item_code: 'PROC-CATH', item_name: 'Urinary Catheterization', default_price: 800, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Procedure', item_code: 'PROC-OXY', item_name: 'Oxygen Therapy (per hour)', default_price: 150, department: 'IPD', service_category: 'Procedure', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Nursing', item_code: 'NURS-INJ', item_name: 'Injection Administration', default_price: 100, department: 'IPD', service_category: 'Nursing', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Nursing', item_code: 'NURS-NEB', item_name: 'Nebulization', default_price: 200, department: 'IPD', service_category: 'Nursing', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Lab', item_code: 'LAB-CBC', item_name: 'Complete Blood Count', default_price: 400, department: 'LAB', service_category: 'Lab', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Lab', item_code: 'LAB-LFT', item_name: 'Liver Function Test', default_price: 800, department: 'LAB', service_category: 'Lab', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Lab', item_code: 'LAB-RFT', item_name: 'Renal Function Test', default_price: 800, department: 'LAB', service_category: 'Lab', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Lab', item_code: 'LAB-HBA1C', item_name: 'HbA1c', default_price: 600, department: 'LAB', service_category: 'Lab', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Radiology', item_code: 'RAD-XRAY', item_name: 'X-Ray (Single View)', default_price: 500, department: 'RAD', service_category: 'Radiology', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Radiology', item_code: 'RAD-USG', item_name: 'Ultrasound', default_price: 1500, department: 'RAD', service_category: 'Radiology', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Radiology', item_code: 'RAD-CT', item_name: 'CT Scan', default_price: 6000, department: 'RAD', service_category: 'Radiology', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Radiology', item_code: 'RAD-MRI', item_name: 'MRI Scan', default_price: 12000, department: 'RAD', service_category: 'Radiology', hsn_sac_code: '9993', tax_rate: 5 },
+                { category: 'Pharmacy', item_code: 'PHARM-MED', item_name: 'Medicine Pack', default_price: 300, department: 'PHARMACY', service_category: 'Pharmacy', hsn_sac_code: '3004', tax_rate: 12 },
+                { category: 'Miscellaneous', item_code: 'MISC-REG', item_name: 'Registration Fee', default_price: 100, department: 'OPD', service_category: 'Miscellaneous', hsn_sac_code: '9993', tax_rate: 0 },
+                { category: 'Miscellaneous', item_code: 'MISC-AMB', item_name: 'Ambulance Service', default_price: 1500, department: 'IPD', service_category: 'Miscellaneous', hsn_sac_code: '9993', tax_rate: 0 },
+            ];
+            await db.$transaction(
+                defaults.map((s) =>
+                    db.charge_catalog.create({ data: { ...s, is_active: true, organizationId } }),
+                ),
+            );
+            result.services = defaults.length;
+        }
+
+        // Seed lab_test_inventory if empty
+        const labTestCount = await db.lab_test_inventory.count({ where: { organizationId } });
+        if (labTestCount === 0) {
+            const labDefaults = [
+                { test_name: 'Complete Blood Count (CBC)', price: 400, category: 'Haematology', sample_type: 'Blood', unit: 'cells/μL', normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Haemoglobin', price: 150, category: 'Haematology', sample_type: 'Blood', unit: 'g/dL', normal_range_min: 12, normal_range_max: 17, tax_rate: 0 },
+                { test_name: 'Blood Sugar Fasting', price: 120, category: 'Biochemistry', sample_type: 'Blood', unit: 'mg/dL', normal_range_min: 70, normal_range_max: 100, tax_rate: 0 },
+                { test_name: 'Blood Sugar PP', price: 120, category: 'Biochemistry', sample_type: 'Blood', unit: 'mg/dL', normal_range_min: 70, normal_range_max: 140, tax_rate: 0 },
+                { test_name: 'HbA1c', price: 600, category: 'Biochemistry', sample_type: 'Blood', unit: '%', normal_range_min: 4, normal_range_max: 5.7, tax_rate: 0 },
+                { test_name: 'Liver Function Test (LFT)', price: 800, category: 'Biochemistry', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Renal Function Test (RFT)', price: 800, category: 'Biochemistry', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Serum Creatinine', price: 200, category: 'Biochemistry', sample_type: 'Blood', unit: 'mg/dL', normal_range_min: 0.6, normal_range_max: 1.2, tax_rate: 0 },
+                { test_name: 'Uric Acid', price: 200, category: 'Biochemistry', sample_type: 'Blood', unit: 'mg/dL', normal_range_min: 3.5, normal_range_max: 7.2, tax_rate: 0 },
+                { test_name: 'Lipid Profile', price: 700, category: 'Biochemistry', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Thyroid Profile (T3/T4/TSH)', price: 900, category: 'Biochemistry', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'TSH', price: 400, category: 'Biochemistry', sample_type: 'Blood', unit: 'mIU/L', normal_range_min: 0.4, normal_range_max: 4.0, tax_rate: 0 },
+                { test_name: 'Urine Routine & Microscopy', price: 150, category: 'Urine', sample_type: 'Urine', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Urine Culture & Sensitivity', price: 500, category: 'Microbiology', sample_type: 'Urine', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Blood Culture', price: 800, category: 'Microbiology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Widal Test', price: 250, category: 'Serology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Dengue NS1 Antigen', price: 700, category: 'Serology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Malaria Antigen Test', price: 400, category: 'Serology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'HIV 1 & 2 (ELISA)', price: 500, category: 'Serology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'HBsAg (Hepatitis B)', price: 400, category: 'Serology', sample_type: 'Blood', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Pregnancy Test (Urine)', price: 150, category: 'Urine', sample_type: 'Urine', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'ECG', price: 300, category: 'Pathology', sample_type: null, unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'X-Ray Chest PA', price: 400, category: 'Radiology', sample_type: null, unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 5 },
+                { test_name: 'Ultrasound Abdomen', price: 1200, category: 'Radiology', sample_type: null, unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 5 },
+                { test_name: 'CT Scan Head', price: 5000, category: 'Radiology', sample_type: null, unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 5 },
+                { test_name: 'MRI Brain', price: 10000, category: 'Radiology', sample_type: null, unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 5 },
+                { test_name: 'Stool Routine', price: 150, category: 'Pathology', sample_type: 'Stool', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Sputum AFB', price: 300, category: 'Microbiology', sample_type: 'Sputum', unit: null, normal_range_min: null, normal_range_max: null, tax_rate: 0 },
+                { test_name: 'Vitamin D (25-OH)', price: 1200, category: 'Biochemistry', sample_type: 'Blood', unit: 'ng/mL', normal_range_min: 30, normal_range_max: 100, tax_rate: 0 },
+                { test_name: 'Vitamin B12', price: 900, category: 'Biochemistry', sample_type: 'Blood', unit: 'pg/mL', normal_range_min: 200, normal_range_max: 900, tax_rate: 0 },
+            ];
+            await db.$transaction(
+                labDefaults.map((t) =>
+                    db.lab_test_inventory.create({
+                        data: { ...t, is_available: true, requires_prescription: false, organizationId },
+                    }),
+                ),
+            );
+            result.services = (result.services || 0) + labDefaults.length;
+        }
+
+        // Seed ipdServiceMaster if empty (used by /admin/master/services page)
+        const svcMasterCount = await db.ipdServiceMaster.count({ where: { organizationId } });
+        if (svcMasterCount === 0) {
+            const ipdDefaults = [
+                { service_code: 'SVC-CONS-GEN', service_name: 'General Consultation', service_category: 'OPD Consultation', default_rate: 500, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-CONS-SPEC', service_name: 'Specialist Consultation', service_category: 'OPD Consultation', default_rate: 1000, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-ROUND', service_name: 'Doctor Round Visit', service_category: 'OPD Consultation', default_rate: 300, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-EMERG-VISIT', service_name: 'Emergency Doctor Visit', service_category: 'ICU', default_rate: 800, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-ICU-MONITOR', service_name: 'ICU Monitoring (per day)', service_category: 'ICU', default_rate: 3000, hsn_sac_code: '9993', tax_rate: 5 },
+                { service_code: 'SVC-VENTILATOR', service_name: 'Ventilator Support (per day)', service_category: 'ICU', default_rate: 5000, hsn_sac_code: '9993', tax_rate: 5 },
+                { service_code: 'SVC-PROC-MINOR', service_name: 'Minor Procedure', service_category: 'Procedure', default_rate: 2000, hsn_sac_code: '9993', tax_rate: 5 },
+                { service_code: 'SVC-PROC-MAJOR', service_name: 'Major Procedure', service_category: 'Procedure', default_rate: 10000, hsn_sac_code: '9993', tax_rate: 5 },
+                { service_code: 'SVC-DRESS', service_name: 'Dressing Change', service_category: 'Procedure', default_rate: 200, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-IV-LINE', service_name: 'IV Line Insertion', service_category: 'Procedure', default_rate: 250, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-CATH', service_name: 'Urinary Catheterization', service_category: 'Procedure', default_rate: 800, hsn_sac_code: '9993', tax_rate: 5 },
+                { service_code: 'SVC-OXYGEN', service_name: 'Oxygen Therapy (per hour)', service_category: 'Procedure', default_rate: 150, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-SUTURE', service_name: 'Suture / Wound Closure', service_category: 'Procedure', default_rate: 500, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-ROOM-GEN', service_name: 'General Ward Room (per day)', service_category: 'Room', default_rate: 500, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-ROOM-PVT', service_name: 'Private Room (per day)', service_category: 'Room', default_rate: 3000, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-ROOM-ICU', service_name: 'ICU Bed (per day)', service_category: 'Room', default_rate: 5000, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-ROOM-DLX', service_name: 'Deluxe Suite (per day)', service_category: 'Room', default_rate: 6000, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-NURS-INJ', service_name: 'Injection Administration', service_category: 'Nursing', default_rate: 100, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-NURS-NEB', service_name: 'Nebulization', service_category: 'Nursing', default_rate: 200, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-NURS-CARE', service_name: 'General Nursing Care (per day)', service_category: 'Nursing', default_rate: 500, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-NURS-SPEC', service_name: 'Special Nursing (per shift)', service_category: 'Nursing', default_rate: 1200, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-DIET-STD', service_name: 'Standard Diet (per day)', service_category: 'Diet', default_rate: 250, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-DIET-SPL', service_name: 'Special Diet (per day)', service_category: 'Diet', default_rate: 400, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-DIET-TPN', service_name: 'TPN / Parenteral Nutrition', service_category: 'Diet', default_rate: 1500, hsn_sac_code: '9963', tax_rate: 5 },
+                { service_code: 'SVC-CON-GLOVES', service_name: 'Sterile Gloves (pair)', service_category: 'Consumable', default_rate: 50, hsn_sac_code: '4015', tax_rate: 12 },
+                { service_code: 'SVC-CON-SYRINGE', service_name: 'Disposable Syringe', service_category: 'Consumable', default_rate: 20, hsn_sac_code: '9018', tax_rate: 12 },
+                { service_code: 'SVC-CON-CANNULA', service_name: 'IV Cannula', service_category: 'Consumable', default_rate: 80, hsn_sac_code: '9018', tax_rate: 12 },
+                { service_code: 'SVC-CON-CATHSET', service_name: 'Catheter Set', service_category: 'Consumable', default_rate: 350, hsn_sac_code: '9018', tax_rate: 12 },
+                { service_code: 'SVC-MISC-REG', service_name: 'Registration Fee', service_category: 'Misc', default_rate: 100, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-MISC-AMB', service_name: 'Ambulance Service', service_category: 'Misc', default_rate: 1500, hsn_sac_code: '9993', tax_rate: 0 },
+                { service_code: 'SVC-MISC-CERT', service_name: 'Medical Certificate', service_category: 'Misc', default_rate: 200, hsn_sac_code: '9993', tax_rate: 0 },
+            ];
+            await db.$transaction(
+                ipdDefaults.map((s) =>
+                    db.ipdServiceMaster.create({ data: { ...s, is_active: true, organizationId } }),
+                ),
+            );
+            result.services = (result.services || 0) + ipdDefaults.length;
+        }
+
+        return { success: true as const, data: result };
+    } catch (error: any) {
+        console.error('ensureIPDDemoMasterData error:', error);
+        return { success: false as const, error: error.message };
+    }
+}

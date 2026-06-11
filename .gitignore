@@ -1,0 +1,101 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+*.md
+*.pdf
+*.doc
+*.docx
+*.docm
+*.ppt
+*.pptx
+*.html
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.xlt
+*.xltx
+*.xltm
+page-01.jpg
+page-02.jpg
+page-03.jpg
+page-04.jpg
+page-05.jpg
+page-06.jpg
+page-07.jpg
+page-08.jpg
+page-09.jpg
+page-10.jpg
+page-11.jpg
+page-12.jpg
+page-13.jpg
+page-14.jpg
+page-15.jpg
+page-16.jpg
+page-17.jpg
+page-18.jpg
+page-19.jpg
+page-20.jpg
+page-21.jpg
+page-22.jpg
+page-23.jpg
+page-24.jpg
+page-25.jpg
+page-26.jpg
+page-27.jpg
+page-28.jpg
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/app/generated/prisma
+
+# logs
+*.log
+
+# temp files
+~$*
+
+# local db
+prisma/dev.db
+
+# AI tool configs
+.omc/
+.gemini/
+.claude/

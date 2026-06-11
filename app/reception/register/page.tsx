@@ -1,0 +1,938 @@
+'use client';
+
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+    UserPlus, CheckCircle, Phone,
+    User, MapPin, Shield, Calendar, Loader2, Mail,
+    AlertCircle, Heart, Users, FileCheck,
+    Building2, CreditCard, FileText, GitMerge, CalendarPlus,
+    Receipt, UserCheck, X
+} from 'lucide-react';
+import { registerPatient, checkDuplicatePatient } from '@/app/actions/register-patient';
+import { lookupInsuranceByPhone } from '@/app/actions/insurance-lookup';
+import { getDepartmentList } from '@/app/actions/reception-actions';
+import { getCorporateMasters, getTpaProviders } from '@/app/actions/patient-type-actions';
+import { getDoctorsForDropdown } from '@/app/actions/admin-actions';
+import { AppShell } from '@/app/components/layout/AppShell';
+import { useToast } from '@/app/components/ui/Toast';
+import { FALLBACK_DEPARTMENTS } from '@/app/lib/constants/departments';
+import { useRouter } from 'next/navigation';
+
+type DuplicatePatient = {
+    patient_id: string;
+    full_name: string;
+    phone: string | null;
+    age: string | null;
+    gender: string | null;
+    department: string | null;
+    date_of_birth: string | null;
+    created_at: Date;
+    patient_type?: string | null;
+};
+
+const PATIENT_TYPE_BADGE: Record<string, string> = {
+    cash: 'bg-orange-100 text-orange-700',
+    corporate: 'bg-blue-100 text-blue-700',
+    tpa_insurance: 'bg-amber-100 text-amber-700',
+};
+const PATIENT_TYPE_LABEL: Record<string, string> = {
+    cash: 'Cash',
+    corporate: 'Corporate',
+    tpa_insurance: 'TPA',
+};
+
+type DepartmentItem = {
+    id: string;
+    name: string;
+};
+
+type CorporateItem = {
+    id: string;
+    company_name: string;
+    company_code: string;
+    discount_percentage: string | number;
+};
+
+type TpaProviderItem = {
+    id: number;
+    provider_name: string;
+    provider_code: string;
+    pre_auth_required: boolean;
+    default_discount_percentage: string | number;
+};
+
+const PATIENT_TYPES = [
+    { value: 'cash', label: 'Cash', color: 'teal' },
+    { value: 'corporate', label: 'Corporate', color: 'blue' },
+    { value: 'tpa_insurance', label: 'TPA / Insurance', color: 'amber' },
+] as const;
+
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+const RELATIONSHIPS = ['Spouse', 'Parent', 'Child', 'Sibling', 'Friend', 'Other'] as const;
+const sanitizeName = (value: string) => value.replace(/[^a-zA-Z\s.'-]/g, '');
+
+function calculateAge(dob: string): string {
+    if (!dob) return '';
+    const birth = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return String(Math.max(0, age));
+}
+
+export default function ReceptionPage() {
+    const toast = useToast();
+    const router = useRouter();
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [departments, setDepartments] = useState<DepartmentItem[]>([]);
+    const [doctors, setDoctors] = useState<{ id: string; name: string; specialty: string | null }[]>([]);
+    const [duplicates, setDuplicates] = useState<DuplicatePatient[]>([]);
+    const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
+    const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+    const [dobValue, setDobValue] = useState('');
+    const [ageValue, setAgeValue] = useState('');
+    // Phase 1 — Patient Type
+    const [patientType, setPatientType] = useState<'cash' | 'corporate' | 'tpa_insurance'>('cash');
+    const [corporates, setCorporates] = useState<CorporateItem[]>([]);
+    const [tpaProviders, setTpaProviders] = useState<TpaProviderItem[]>([]);
+    const [selectedCorporate, setSelectedCorporate] = useState<CorporateItem | null>(null);
+    const [successData, setSuccessData] = useState<{
+        patient_id: string;
+        appointment_id?: string;
+        user_type?: string;
+        password_setup_required?: boolean;
+        manual_password_setup_link?: string | null;
+    } | null>(null);
+    const [isLookingUpInsurance, setIsLookingUpInsurance] = useState(false);
+    const [insuranceFoundAlert, setInsuranceFoundAlert] = useState<string | null>(null);
+    const [allowDuplicate, setAllowDuplicate] = useState(false);
+
+    // Load departments, corporates, TPA providers on mount
+    useEffect(() => {
+        getDepartmentList().then(result => {
+            if (result.success && result.data && result.data.length > 0) {
+                setDepartments(result.data.map((d: { id: string; name: string }) => ({ id: d.id, name: d.name })));
+            } else if ((result as any).useFallback) {
+                // No departments configured at all — show fallback list
+                setDepartments(FALLBACK_DEPARTMENTS.map(name => ({ id: name, name })));
+            } else {
+                // Departments exist but all are deactivated — show empty
+                setDepartments([]);
+            }
+        });
+        getCorporateMasters().then(r => {
+            if (r.success) setCorporates(r.data as CorporateItem[]);
+        });
+        getTpaProviders().then(r => {
+            if (r.success) setTpaProviders(r.data as TpaProviderItem[]);
+        });
+        getDoctorsForDropdown().then(r => {
+            if (r.success) setDoctors(r.data || []);
+        });
+    }, []);
+
+    // Duplicate detection on phone blur
+    const handlePhoneBlur = useCallback(async (e: React.FocusEvent<HTMLInputElement>) => {
+        const phone = e.target.value.replace(/[\s\-+]/g, '');
+        if (phone.length < 10) {
+            setDuplicates([]);
+            setShowDuplicateWarning(false);
+            return;
+        }
+
+        setIsCheckingDuplicate(true);
+        const result = await checkDuplicatePatient(phone);
+        setIsCheckingDuplicate(false);
+
+        if (result.success && result.data.length > 0) {
+            setDuplicates(result.data);
+            setShowDuplicateWarning(true);
+        } else {
+            setDuplicates([]);
+            setShowDuplicateWarning(false);
+            
+            // NEW: If no duplicate found, check for insurance auto-discovery
+            setIsLookingUpInsurance(true);
+            const insResult = await lookupInsuranceByPhone(phone);
+            setIsLookingUpInsurance(false);
+
+            if (insResult.success && insResult.data) {
+                const data = insResult.data;
+                // Auto-fill form fields
+                setPatientType('tpa_insurance');
+                setInsuranceFoundAlert(data.message || 'Insurance record found');
+                
+                // We use setTimeout to ensure states are updated before we potentially trigger other effects
+                setTimeout(() => {
+                    const form = document.querySelector('form');
+                    if (form) {
+                        const nameInput = form.querySelector('input[name="full_name"]') as HTMLInputElement;
+                        const policyInput = form.querySelector('input[name="insurance_policy_number"]') as HTMLInputElement;
+                        const tpaSelect = form.querySelector('select[name="tpa_provider_id"]') as HTMLSelectElement;
+
+                        if (nameInput && !nameInput.value) nameInput.value = data.full_name || '';
+                        if (policyInput) policyInput.value = data.insurance_policy_number || '';
+                        if (tpaSelect) tpaSelect.value = String(data.tpa_provider_id);
+                    }
+                }, 100);
+            }
+        }
+    }, [lookupInsuranceByPhone]);
+
+    const triggerInsuranceLookup = useCallback(async () => {
+        const form = document.querySelector('form');
+        const phoneInput = form?.querySelector('input[name="phone"]') as HTMLInputElement;
+        if (!phoneInput) return;
+
+        const val = phoneInput.value.replace(/\D/g, '');
+        if (val.length < 10) {
+            toast.error('Please enter a valid 10-digit phone number');
+            return;
+        }
+
+        setIsLookingUpInsurance(true);
+        const insResult = await lookupInsuranceByPhone(val);
+        setIsLookingUpInsurance(false);
+
+        if (insResult.success && insResult.data) {
+            const data = insResult.data;
+            setPatientType('tpa_insurance');
+            setInsuranceFoundAlert(data.message || 'Insurance record found');
+            
+            setTimeout(() => {
+                const nameInput = form?.querySelector('input[name="full_name"]') as HTMLInputElement;
+                const policyInput = form?.querySelector('input[name="insurance_policy_number"]') as HTMLInputElement;
+                const tpaSelect = form?.querySelector('select[name="tpa_provider_id"]') as HTMLSelectElement;
+
+                if (nameInput && !nameInput.value) nameInput.value = data.full_name || '';
+                if (policyInput) policyInput.value = data.insurance_policy_number || '';
+                if (tpaSelect) tpaSelect.value = String(data.tpa_provider_id);
+            }, 100);
+        } else {
+            toast.error(insResult.message || 'No insurance record found');
+        }
+    }, [lookupInsuranceByPhone, toast]);
+
+    const handlePhoneChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = e.target.value.replace(/\D/g, '').slice(0, 10);
+        e.target.value = val;
+
+        if (val.length === 10) {
+            setIsCheckingDuplicate(true);
+            const result = await checkDuplicatePatient(val);
+            setIsCheckingDuplicate(false);
+
+            if (result.success && result.data.length > 0) {
+                setDuplicates(result.data);
+                setShowDuplicateWarning(true);
+            } else {
+                setDuplicates([]);
+                setShowDuplicateWarning(false);
+            }
+        } else {
+            if (val.length < 10) {
+                setDuplicates([]);
+                setShowDuplicateWarning(false);
+                setInsuranceFoundAlert(null);
+                setAllowDuplicate(false);
+            }
+        }
+    }, [checkDuplicatePatient]);
+
+    // DOB → Age auto-calc
+    const handleDobChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const dob = e.target.value;
+        setDobValue(dob);
+        setAgeValue(calculateAge(dob));
+    }, []);
+
+    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        setIsSubmitting(true);
+        const formData = new FormData(event.currentTarget);
+        if (allowDuplicate) {
+            formData.set('allowDuplicate', 'true');
+        }
+        const result = await registerPatient(formData) as any;
+
+        if (result.success) {
+            setSuccessData({
+                patient_id: result.patient_id!,
+                appointment_id: result.appointment_id ?? undefined,
+                user_type: result.user_type,
+                password_setup_required: result.password_setup_required,
+                manual_password_setup_link: result.manual_password_setup_link,
+            });
+            setDuplicates([]);
+            setShowDuplicateWarning(false);
+            setAllowDuplicate(false);
+            (event.target as HTMLFormElement).reset();
+            setDobValue('');
+            setAgeValue('');
+            setPatientType('cash');
+            setSelectedCorporate(null);
+            router.refresh();
+        } else if (result.duplicate) {
+            // Server blocked duplicate — show warning modal
+            toast.error('Patient already registered with this phone number');
+            setShowDuplicateWarning(true);
+            // Re-fetch duplicates to show in modal
+            const phone = formData.get('phone') as string;
+            if (phone) {
+                const dupResult = await checkDuplicatePatient(phone);
+                if (dupResult.success && dupResult.data.length > 0) {
+                    setDuplicates(dupResult.data);
+                }
+            }
+        } else {
+            toast.error(result.error || 'Registration failed');
+        }
+        setIsSubmitting(false);
+    }
+
+    const inputClass = "w-full bg-white border border-gray-300 rounded-xl px-4 py-3.5 text-sm text-gray-900 font-bold placeholder:text-gray-400 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/10 outline-none transition-all";
+    const inputWithIconClass = `${inputClass} pl-11`;
+    const labelClass = "text-[10px] font-black text-gray-400 uppercase tracking-[0.15em] ml-1";
+    const selectClass = `${inputClass} appearance-none`;
+
+    return (
+        <AppShell pageTitle="Patient Registration" pageIcon={<UserPlus className="h-5 w-5" />}>
+
+            <div className="max-w-[1200px] mx-auto">
+                {/* Page Title */}
+                <div className="mb-8">
+                    <h2 className="text-3xl font-black tracking-tight text-gray-900">
+                        Patient Registration
+                    </h2>
+                    <p className="text-gray-500 mt-1 font-medium">
+                        Register incoming OPD patients · Digital IDs generated automatically
+                    </p>
+                </div>
+
+                <div>
+                    {/* Main Form Area */}
+                    <div>
+                        <div className="bg-white border border-gray-200 shadow-sm rounded-2xl overflow-hidden relative">
+                            {/* Gradient top border */}
+                            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-teal-400 via-emerald-500 to-teal-400" />
+
+                            {successData ? (
+                                /* Success State */
+                                <div className="p-12 flex flex-col items-center justify-center text-center min-h-[500px]">
+                                    <div className="relative mb-6">
+                                        <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse" />
+                                        <div className="relative h-24 w-24 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-full flex items-center justify-center shadow-2xl shadow-emerald-500/20">
+                                            <CheckCircle className="h-12 w-12 text-white" />
+                                        </div>
+                                    </div>
+                                    <h3 className="text-3xl font-black text-gray-900 mb-2">Registration Complete</h3>
+                                    <p className="text-gray-500 text-sm font-medium mb-8">Patient has been added to the system</p>
+
+                                    <div className="bg-gray-100 border border-gray-200 rounded-2xl p-8 w-full max-w-sm">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">Patient ID</p>
+                                        <p className="text-4xl font-black text-transparent bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text tracking-tight font-mono">
+                                            {successData.patient_id}
+                                        </p>
+                                        {successData.appointment_id && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                                <p className="text-[10px] font-black text-gray-300 uppercase tracking-[0.15em] mb-1">Appointment</p>
+                                                <p className="text-sm font-bold text-teal-400 font-mono">{successData.appointment_id}</p>
+                                            </div>
+                                        )}
+                                        {successData.password_setup_required && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                                <p className="text-[10px] font-black text-pink-400 uppercase tracking-[0.15em] mb-1">Portal Access Setup</p>
+                                                <p className="text-xs font-bold text-pink-600">Password setup link has been issued</p>
+                                                {successData.manual_password_setup_link ? (
+                                                    <p className="text-[10px] mt-2 break-all text-gray-500 font-mono">{successData.manual_password_setup_link}</p>
+                                                ) : (
+                                                    <p className="text-[10px] mt-2 text-gray-500">Link sent to patient email</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                                        <button
+                                            onClick={() => setSuccessData(null)}
+                                            className="px-6 py-3.5 bg-gray-100 border border-gray-200 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-200 transition-all active:scale-[0.98] flex items-center gap-2"
+                                        >
+                                            <UserPlus className="h-4 w-4" /> Register Next
+                                        </button>
+                                        <button
+                                            onClick={() => router.push(`/reception/patient/${successData.patient_id}`)}
+                                            className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-[0.98] flex items-center gap-2"
+                                        >
+                                            <User className="h-4 w-4" /> View Profile
+                                        </button>
+                                        <button
+                                            onClick={() => router.push(`/reception/appointments?patientId=${successData.patient_id}`)}
+                                            className="px-6 py-3.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-teal-500/20 hover:shadow-teal-500/30 transition-all active:scale-[0.98] flex items-center gap-2"
+                                        >
+                                            <CalendarPlus className="h-4 w-4" /> Book Appointment
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Registration Form */
+                                <form onSubmit={handleSubmit} className="p-8">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-2 bg-orange-500/10 rounded-xl">
+                                            <UserPlus className="h-5 w-5 text-teal-400" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-black text-gray-700">Patient Details</h3>
+                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Fill in patient information below</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Insurance Discovery Alert */}
+                                    {insuranceFoundAlert && (
+                                        <div className="mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Shield className="h-4 w-4 text-emerald-500" />
+                                                    <span className="text-sm font-bold text-emerald-700">
+                                                        {insuranceFoundAlert}
+                                                    </span>
+                                                </div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => setInsuranceFoundAlert(null)}
+                                                    className="text-[10px] font-black text-emerald-600 uppercase tracking-widest hover:text-emerald-700"
+                                                >
+                                                    Dismiss
+                                                </button>
+                                            </div>
+                                            <p className="text-[10px] text-emerald-600 font-medium mt-1 ml-6">
+                                                TPA details and Policy Number have been auto-filled for you.
+                                            </p>
+                                        </div>
+                                    )}
+
+
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
+                                        {/* Full Name */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Full Name *</label>
+                                            <div className="relative">
+                                                <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                <input
+                                                    name="full_name"
+                                                    required
+                                                    maxLength={60}
+                                                    pattern="[A-Za-z\s.'-]{2,60}"
+                                                    onChange={(e) => { e.target.value = sanitizeName(e.target.value); }}
+                                                    className={inputWithIconClass}
+                                                    placeholder="e.g. Rahul Kumar"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Phone with +91 prefix */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>
+                                                Phone *
+                                                {isCheckingDuplicate && <span className="ml-2 text-teal-400 normal-case">checking...</span>}
+                                                {isLookingUpInsurance && <span className="ml-2 text-violet-400 normal-case flex items-center gap-1 inline-flex">
+                                                    <Loader2 className="h-3 w-3 animate-spin" /> looking up insurance...
+                                                </span>}
+                                            </label>
+                                            <div className="relative flex">
+                                                <span className="inline-flex items-center px-3 py-3.5 bg-gray-100 border border-r-0 border-gray-300 rounded-l-xl text-sm font-bold text-gray-500">
+                                                    +91
+                                                </span>
+                                                <div className="relative flex-1">
+                                                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                    <input
+                                                        name="phone"
+                                                        required
+                                                        type="tel"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]{10}"
+                                                        maxLength={10}
+                                                        onBlur={handlePhoneBlur}
+                                                        className="w-full bg-white border border-gray-300 rounded-r-xl pl-10 pr-24 py-3.5 text-sm text-gray-900 font-bold placeholder:text-gray-400 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/10 outline-none transition-all"
+                                                        placeholder="10-digit mobile"
+                                                        onChange={handlePhoneChange}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={triggerInsuranceLookup}
+                                                        disabled={isLookingUpInsurance}
+                                                        className="absolute right-2 top-1.5 bottom-1.5 px-3 bg-violet-500 hover:bg-violet-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                                                    >
+                                                        {isLookingUpInsurance ? <Loader2 className="h-3 w-3 animate-spin" /> : <Shield className="h-3 w-3" />}
+                                                        {isLookingUpInsurance ? 'Verifying...' : 'Verify'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Date of Birth */}
+                                        <div className="space-y-1.5">
+                                            <label className={labelClass}>Date of Birth</label>
+                                            <div className="relative">
+                                                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                <input
+                                                    name="date_of_birth"
+                                                    type="date"
+                                                    value={dobValue}
+                                                    max={new Date().toISOString().split('T')[0]}
+                                                    onChange={handleDobChange}
+                                                    className={inputWithIconClass}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Age (auto-calc from DOB or manual) */}
+                                        <div className="space-y-1.5">
+                                            <label className={labelClass}>Age *</label>
+                                            <input
+                                                name="age"
+                                                type="number"
+                                                min="0"
+                                                max="120"
+                                                required
+                                                value={ageValue}
+                                                onChange={(e) => setAgeValue(e.target.value)}
+                                                className={`${inputClass} text-center`}
+                                                placeholder="Yrs"
+                                            />
+                                        </div>
+
+                                        {/* Gender */}
+                                        <div className="space-y-1.5">
+                                            <label className={labelClass}>Gender *</label>
+                                            <select name="gender" className={selectClass}>
+                                                <option value="Male">Male</option>
+                                                <option value="Female">Female</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+
+                                        {/* Blood Group */}
+                                        <div className="space-y-1.5">
+                                            <label className={labelClass}>Blood Group</label>
+                                            <div className="relative">
+                                                <Heart className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                <select name="blood_group" className={`${selectClass} pl-11`}>
+                                                    <option value="">Select</option>
+                                                    {BLOOD_GROUPS.map(bg => (
+                                                        <option key={bg} value={bg}>{bg}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        {/* Department from DB */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Department <span className="text-gray-400 font-normal">(Optional)</span></label>
+                                            <select name="department" className={selectClass}>
+                                                <option value="">Select Department</option>
+                                                {departments.map(dept => (
+                                                    <option key={dept.id} value={dept.name}>{dept.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Doctor dropdown */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Doctor <span className="text-gray-400 font-normal">(Optional)</span></label>
+                                            <select name="doctor_name" className={selectClass}>
+                                                <option value="">Select Doctor</option>
+                                                {doctors.map(d => (
+                                                    <option key={d.id} value={d.name}>
+                                                        {d.name}{d.specialty ? ` — ${d.specialty}` : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Aadhaar */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Aadhaar (Optional)</label>
+                                            <div className="relative">
+                                                <Shield className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                <input
+                                                    name="aadhar"
+                                                    className={`${inputWithIconClass} tracking-wider font-mono`}
+                                                    placeholder="xxxx-xxxx-xxxx"
+                                                    maxLength={14}
+                                                    onChange={(e) => {
+                                                        let val = e.target.value.replace(/\D/g, '').replace(/(\d{4})(?=\d)/g, '$1-');
+                                                        e.target.value = val;
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Email */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Email (Optional)</label>
+                                            <div className="relative">
+                                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-300" />
+                                                <input
+                                                    name="email"
+                                                    type="email"
+                                                    className={inputWithIconClass}
+                                                    placeholder="patient@example.com"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Address textarea */}
+                                        <div className="md:col-span-2 space-y-1.5">
+                                            <label className={labelClass}>Address *</label>
+                                            <div className="relative">
+                                                <MapPin className="absolute left-4 top-4 h-4 w-4 text-gray-300" />
+                                                <textarea
+                                                    name="address"
+                                                    required
+                                                    rows={3}
+                                                    className="w-full bg-white border border-gray-300 rounded-xl pl-11 pr-4 py-3.5 text-sm text-gray-900 font-bold placeholder:text-gray-400 focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/10 outline-none transition-all resize-none"
+                                                    placeholder="House No, Street, City, State, PIN..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Emergency Contact Section */}
+                                    <div className="mb-6 border-t border-gray-200 pt-6">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <Users className="h-4 w-4 text-rose-400" />
+                                            <span className="text-xs font-black text-gray-500">Emergency Contact (Optional)</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                            <div className="space-y-1.5">
+                                                <label className={labelClass}>Contact Name</label>
+                                                <input
+                                                    name="emergency_contact_name"
+                                                    maxLength={60}
+                                                    onChange={(e) => { e.target.value = sanitizeName(e.target.value); }}
+                                                    className={inputClass}
+                                                    placeholder="Full name"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className={labelClass}>Contact Phone</label>
+                                                <input
+                                                    name="emergency_contact_phone"
+                                                    type="tel"
+                                                    inputMode="numeric"
+                                                    pattern="[0-9]{10}"
+                                                    className={inputClass}
+                                                    placeholder="10-digit mobile"
+                                                    maxLength={10}
+                                                    onChange={(e) => {
+                                                        e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                    }}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className={labelClass}>Relationship</label>
+                                                <select name="emergency_contact_relation" className={selectClass}>
+                                                    <option value="">Select</option>
+                                                    {RELATIONSHIPS.map(rel => (
+                                                        <option key={rel} value={rel}>{rel}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Patient Type Classification */}
+                                    <div className="mb-6 border-t border-gray-200 pt-6">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <CreditCard className="h-4 w-4 text-violet-400" />
+                                            <span className="text-xs font-black text-gray-500">Patient Type *</span>
+                                        </div>
+                                        <input type="hidden" name="patient_type" value={patientType} />
+                                        <div className="flex gap-3 flex-wrap mb-4">
+                                            {PATIENT_TYPES.map(pt => (
+                                                <button
+                                                    key={pt.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setPatientType(pt.value);
+                                                        setSelectedCorporate(null);
+                                                    }}
+                                                    className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all ${
+                                                        patientType === pt.value
+                                                            ? pt.value === 'cash'
+                                                                ? 'bg-orange-500 border-orange-500 text-white shadow-md'
+                                                                : pt.value === 'corporate'
+                                                                    ? 'bg-blue-500 border-blue-500 text-white shadow-md'
+                                                                    : 'bg-amber-500 border-amber-500 text-white shadow-md'
+                                                            : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                                    }`}
+                                                >
+                                                    {pt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Corporate Fields */}
+                                        {patientType === 'corporate' && (
+                                            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-4">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                                                    <span className="text-xs font-bold text-blue-700">Corporate Details</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>Company *</label>
+                                                        <select
+                                                            name="corporate_id"
+                                                            required={patientType === 'corporate'}
+                                                            className={selectClass}
+                                                            onChange={e => {
+                                                                const corp = corporates.find(c => c.id === e.target.value) || null;
+                                                                setSelectedCorporate(corp);
+                                                            }}
+                                                        >
+                                                            <option value="">Select Company</option>
+                                                            {corporates.map(c => (
+                                                                <option key={c.id} value={c.id}>{c.company_name} ({c.company_code})</option>
+                                                            ))}
+                                                        </select>
+                                                        {selectedCorporate && (
+                                                            <p className="text-[10px] text-blue-600 font-bold ml-1">
+                                                                Discount: {Number(selectedCorporate.discount_percentage)}%
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>Employee ID</label>
+                                                        <input name="employee_id" className={inputClass} placeholder="EMP-001" />
+                                                    </div>
+                                                    <div className="space-y-1.5 md:col-span-2">
+                                                        <label className={labelClass}>Corporate Card Number (Optional)</label>
+                                                        <input name="corporate_card_number" className={inputClass} placeholder="Card / ID number" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* TPA / Insurance Fields */}
+                                        {patientType === 'tpa_insurance' && (
+                                            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 space-y-4">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <FileText className="h-3.5 w-3.5 text-amber-600" />
+                                                    <span className="text-xs font-bold text-amber-700">TPA / Insurance Details</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>TPA / Insurance Company *</label>
+                                                        <select
+                                                            name="tpa_provider_id"
+                                                            required={patientType === 'tpa_insurance'}
+                                                            className={selectClass}
+                                                        >
+                                                            <option value="">Select Provider</option>
+                                                            {tpaProviders.map(p => (
+                                                                <option key={p.id} value={p.id}>
+                                                                    {p.provider_name} ({p.provider_code})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>Policy Number *</label>
+                                                        <input
+                                                            name="insurance_policy_number"
+                                                            required={patientType === 'tpa_insurance'}
+                                                            className={inputClass}
+                                                            placeholder="Policy / Member ID"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>Validity Start</label>
+                                                        <input type="date" name="insurance_validity_start" className={inputClass} />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className={labelClass}>Validity End</label>
+                                                        <input type="date" name="insurance_validity_end" className={inputClass} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Consent */}
+                                    <div className="mb-6 border-t border-gray-200 pt-6">
+                                        <label className="flex items-start gap-3 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                name="registration_consent"
+                                                required
+                                                className="mt-1 h-4 w-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500/20"
+                                            />
+                                            <div>
+                                                <span className="text-sm font-bold text-gray-700 group-hover:text-gray-900 transition-colors flex items-center gap-1.5">
+                                                    <FileCheck className="h-3.5 w-3.5 text-teal-400" />
+                                                    Registration Consent *
+                                                </span>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    I confirm the patient has given consent for registration and data collection as per hospital policy.
+                                                </p>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {/* Book Appointment Option — opt-in */}
+                                    <div className="mb-6 border-t border-gray-200 pt-6">
+                                        <label className="flex items-start gap-3 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                name="bookAppointment"
+                                                value="true"
+                                                className="mt-1 h-4 w-4 rounded border-gray-300 text-teal-500 focus:ring-teal-500/20"
+                                            />
+                                            <div>
+                                                <span className="text-sm font-bold text-gray-700 group-hover:text-gray-900 transition-colors flex items-center gap-1.5">
+                                                    <Calendar className="h-3.5 w-3.5 text-teal-400" />
+                                                    Book appointment now
+                                                </span>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    Check this to create an appointment along with registration. Leave unchecked to register only.
+                                                </p>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <div className="flex justify-end pt-6 border-t border-gray-200">
+                                        <button
+                                            type="submit"
+                                            disabled={isSubmitting}
+                                            className="px-8 py-3.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-teal-500/20 hover:shadow-teal-500/30 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            {isSubmitting ? (
+                                                <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>
+                                            ) : (
+                                                <><UserPlus className="h-4 w-4" /> Register Patient</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        {/* Duplicate Patient Detection Modal */}
+        {showDuplicateWarning && duplicates.length > 0 && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+                    {/* Header */}
+                    <div className="bg-amber-50 border-b border-amber-100 px-6 py-4 flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-amber-100 rounded-xl">
+                                <AlertCircle className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-black text-gray-900">
+                                    Patient Already Registered
+                                </h3>
+                                <p className="text-xs text-amber-700 font-medium mt-0.5">
+                                    {duplicates.length} existing record{duplicates.length > 1 ? 's' : ''} found with this phone number
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowDuplicateWarning(false)}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    {/* Patient Cards */}
+                    <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+                        {duplicates.map((p) => (
+                            <div key={p.patient_id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                                <div className="flex items-start gap-3 mb-3">
+                                    {/* Avatar */}
+                                    <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-xl flex items-center justify-center text-white text-sm font-black shrink-0">
+                                        {p.full_name?.charAt(0) || 'P'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-sm font-black text-gray-900">{p.full_name}</span>
+                                            {p.patient_type && (
+                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wide ${PATIENT_TYPE_BADGE[p.patient_type] || 'bg-gray-100 text-gray-600'}`}>
+                                                    {PATIENT_TYPE_LABEL[p.patient_type] || p.patient_type}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs font-mono text-orange-600 mt-0.5">{p.patient_id}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">
+                                            {[p.phone, p.age ? `${p.age}y` : null, p.gender, p.department].filter(Boolean).join(' · ')}
+                                        </p>
+                                        {p.date_of_birth && (
+                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                Registered {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                                {/* Action Buttons */}
+                                <div className="flex gap-2 flex-wrap">
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push(`/reception/patient/${p.patient_id}`)}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        <UserCheck className="h-3.5 w-3.5" /> Open Profile
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push(`/reception/appointments?patientId=${p.patient_id}`)}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-violet-100 hover:bg-violet-200 text-violet-700 text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        <CalendarPlus className="h-3.5 w-3.5" /> Book Appointment
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push(`/billing/new?patientId=${p.patient_id}`)}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        <Receipt className="h-3.5 w-3.5" /> New Bill
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 bg-gray-50">
+                        {duplicates.length >= 2 && (
+                            <button
+                                type="button"
+                                onClick={() => router.push(`/reception/merge-patients?phone=${duplicates[0]?.phone || ''}`)}
+                                className="flex items-center gap-1.5 px-4 py-2.5 border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 text-xs font-bold rounded-xl transition-colors"
+                            >
+                                <GitMerge className="h-3.5 w-3.5" /> Merge Records
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setAllowDuplicate(true);
+                                setShowDuplicateWarning(false);
+                                toast.info('Duplicate override enabled — click "Register Patient" to proceed');
+                            }}
+                            className="ml-auto flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors"
+                        >
+                            <UserPlus className="h-3.5 w-3.5" /> Register as New Patient Anyway
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        </AppShell>
+    );
+}
