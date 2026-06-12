@@ -15,7 +15,7 @@
  *     re-derived from the filtered rows so the tfoot stays accurate.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { RevenueTable, type RevenuePayload, type RevenueRow } from '@/components/mis/RevenueTable';
@@ -31,8 +31,8 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
     const searchParams = useSearchParams();
 
     const startDate = searchParams.get('startDate') ?? '';
-    const endDate   = searchParams.get('endDate')   ?? '';
-    const doctor    = searchParams.get('doctor')    ?? '';
+    const endDate = searchParams.get('endDate') ?? '';
+    const doctor = searchParams.get('doctor') ?? '';
 
     const allRows = payload.rows ?? [];
 
@@ -49,9 +49,9 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
     const filteredRows = useMemo<RevenueRow[]>(
         () =>
             allRows.filter((row) => {
-                if (startDate && row.date < startDate)           return false;
-                if (endDate   && row.date > endDate)             return false;
-                if (doctor    && row.doctor_name !== doctor)     return false;
+                if (startDate && row.date < startDate) return false;
+                if (endDate && row.date > endDate) return false;
+                if (doctor && row.doctor_name !== doctor) return false;
                 return true;
             }),
         [allRows, startDate, endDate, doctor]
@@ -62,17 +62,18 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
     // is applied client-side, totals must be recalculated so the tfoot stays
     // consistent with the visible rows.
     const derivedTotals = useMemo(() => ({
-        billed_amount:    filteredRows.reduce((s, r) => s + r.billed_amount,    0),
+        billed_amount: filteredRows.reduce((s, r) => s + r.billed_amount, 0),
         collected_amount: filteredRows.reduce((s, r) => s + r.collected_amount, 0),
-        invoice_count:    filteredRows.reduce((s, r) => s + r.invoice_count,    0),
+        invoice_count: filteredRows.reduce((s, r) => s + r.invoice_count, 0),
     }), [filteredRows]);
 
     // ── Build the payload slice that RevenueTable actually renders ─────────
     const filteredPayload: RevenuePayload = {
         ...payload,
-        rows:   filteredRows,
+        rows: filteredRows,
         totals: derivedTotals,
     };
+
 
     // ── KPI aggregates ────────────────────────────────────────────────────
     const { billed_amount: totalBilled, collected_amount: totalCollected, invoice_count: totalInvoices } = derivedTotals;
@@ -147,15 +148,15 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
                             reportId="billing-revenue-daily"
                             filters={{
                                 startDate: startDate || undefined,
-                                endDate:   endDate   || undefined,
+                                endDate: endDate || undefined,
                             }}
                         />
                     </div>
                 </div>
 
                 <RevenueTable payload={filteredPayload} />
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
 
@@ -163,10 +164,10 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
 type Accent = 'emerald' | 'indigo' | 'amber' | 'teal';
 
 const ACCENT_MAP: Record<Accent, { border: string; bg: string; dot: string; text: string }> = {
-    emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50',  dot: 'bg-emerald-500', text: 'text-emerald-700' },
-    indigo:  { border: 'border-indigo-200',  bg: 'bg-indigo-50',   dot: 'bg-indigo-500',  text: 'text-indigo-700'  },
-    amber:   { border: 'border-amber-200',   bg: 'bg-amber-50',    dot: 'bg-amber-500',   text: 'text-amber-700'   },
-    teal:    { border: 'border-teal-200',    bg: 'bg-teal-50',     dot: 'bg-teal-500',    text: 'text-teal-700'    },
+    emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    indigo: { border: 'border-indigo-200', bg: 'bg-indigo-50', dot: 'bg-indigo-500', text: 'text-indigo-700' },
+    amber: { border: 'border-amber-200', bg: 'bg-amber-50', dot: 'bg-amber-500', text: 'text-amber-700' },
+    teal: { border: 'border-teal-200', bg: 'bg-teal-50', dot: 'bg-teal-500', text: 'text-teal-700' },
 };
 
 function KPICard({ label, value, sub, accent }: { label: string; value: string; sub: string; accent: Accent }) {
