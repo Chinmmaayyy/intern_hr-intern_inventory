@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
-
-const prisma = new PrismaClient();
 
 export const dailyRevenueReport: ReportDefinition = {
   id: 'billing-revenue-daily',
@@ -65,6 +64,14 @@ export const dailyRevenueReport: ReportDefinition = {
       { billed_amount: 0, collected_amount: 0, invoice_count: 0 }
     );
 
-    return { rows, totals };
+    // Cast BigInt fields to Number for safe Server Action serialization
+    const serializedRows = rows.map(row => ({
+      ...row,
+      billed_amount: Number(row.billed_amount),
+      collected_amount: Number(row.collected_amount),
+      invoice_count: Number(row.invoice_count),
+    }));
+
+    return { rows: serializedRows, totals };
   },
 };

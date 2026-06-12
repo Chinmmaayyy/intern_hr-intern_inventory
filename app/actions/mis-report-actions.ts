@@ -1,12 +1,9 @@
 'use server';
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/backend/db';
 import { runReport } from '@/lib/mis/runner';
 import { dailyRevenueReport } from '@/lib/mis/registry/billing';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
-import { ReportCategory } from '@/lib/mis/types';
-
-const prisma = new PrismaClient();
 
 async function getSession() {
   const user = await prisma.user.findFirst({
