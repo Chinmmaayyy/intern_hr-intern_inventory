@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { listCatalogue } from '@/app/actions/mis-report-actions';
 import { BarChart3 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default async function MISLayout({ children }: { children: React.ReactNode }) {
   const catalogue = await listCatalogue();
   

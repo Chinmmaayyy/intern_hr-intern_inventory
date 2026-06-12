@@ -7,6 +7,8 @@ import { AdminPage } from '@/app/admin/components/AdminPage';
 import { notFound } from 'next/navigation';
 import { BarChart3 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 interface DynamicPageProps {
   params: Promise<{ reportId: string }>;
 }
