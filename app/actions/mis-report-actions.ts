@@ -2,7 +2,14 @@
 
 import { prisma } from '@/backend/db';
 import { runReport, REGISTRY } from '@/lib/mis/runner';
-import { dailyRevenueReport } from '@/lib/mis/registry/billing';
+import { 
+  dailyRevenueReport,
+  billingDetailReport,
+  billingItemDetailReport,
+  billingSummaryReport,
+  billingSummaryDetailReport,
+  billingPaymentModeReport
+} from '@/lib/mis/registry/billing';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
 
@@ -22,7 +29,14 @@ export async function listCatalogue() {
   const session = await getSession();
   
   // Hardcoded for now, you would iterate over REGISTRY
-  const allReports = [dailyRevenueReport];
+  const allReports = [
+    dailyRevenueReport,
+    billingDetailReport,
+    billingItemDetailReport,
+    billingSummaryReport,
+    billingSummaryDetailReport,
+    billingPaymentModeReport
+  ];
   
   const accessibleReports = allReports.filter(r => 
     session.permissions.includes(r.requiredPermission)

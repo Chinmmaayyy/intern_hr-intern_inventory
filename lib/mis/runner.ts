@@ -1,11 +1,23 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
-import { dailyRevenueReport } from './registry/billing';
+import { 
+  dailyRevenueReport,
+  billingDetailReport,
+  billingItemDetailReport,
+  billingSummaryReport,
+  billingSummaryDetailReport,
+  billingPaymentModeReport
+} from './registry/billing';
 import { ValidatedFilters } from './types';
 
 // Add all reports to this registry map
-export const REGISTRY: Record<string, typeof dailyRevenueReport> = {
+export const REGISTRY: Record<string, any> = {
   [dailyRevenueReport.id]: dailyRevenueReport,
+  [billingDetailReport.id]: billingDetailReport,
+  [billingItemDetailReport.id]: billingItemDetailReport,
+  [billingSummaryReport.id]: billingSummaryReport,
+  [billingSummaryDetailReport.id]: billingSummaryDetailReport,
+  [billingPaymentModeReport.id]: billingPaymentModeReport,
 };
 
 export async function runReport(
