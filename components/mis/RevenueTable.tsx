@@ -28,7 +28,12 @@ import { Inbox, Clock4, Hash } from 'lucide-react';
 
 /** One row from the billing-revenue-daily report. */
 export interface RevenueRow {
-    date:             string;  // YYYY-MM-DD
+    /**
+     * Prisma returns a JS `Date` object from `DATE()` raw-query columns.
+     * Legacy mock data used an ISO `string` ("YYYY-MM-DD").
+     * Both shapes are accepted and normalised inside `formatDate`.
+     */
+    date:             string | Date;
     department:       string;
     doctor_name:      string;
     payer_type:       string;  // e.g. "Insurance", "Cash", "Corporate"
@@ -65,9 +70,33 @@ const INR = new Intl.NumberFormat('en-IN', {
     maximumFractionDigits: 2,
 });
 
-function formatDate(iso: string): string {
-    const [year, month, day] = iso.split('-').map(Number);
-    return new Date(year, month - 1, day).toLocaleDateString('en-IN', {
+/**
+ * Converts a `string | Date` date value to a human-readable Indian locale
+ * string (e.g. "12 Jun 2026").
+ *
+ * Two cases handled:
+ *
+ *   1. `Date` object  — Prisma maps PostgreSQL `DATE(...)` columns to a JS
+ *      Date at midnight UTC (e.g. 2026-06-12T00:00:00.000Z). We call
+ *      `toLocaleDateString` on it directly; in IST (+05:30) this still
+ *      resolves to June 12, so no timezone-shift risk for Indian deployments.
+ *
+ *   2. `string`       — Legacy ISO string "YYYY-MM-DD" from mock data.
+ *      We construct `new Date(year, month-1, day)` via the *local-time*
+ *      constructor (not `new Date(isoString)` which parses as UTC) to
+ *      prevent any off-by-one-day display bugs regardless of server timezone.
+ */
+function formatDate(value: string | Date): string {
+    const d: Date =
+        value instanceof Date
+            ? value
+            : (() => {
+                  // Safe local-timezone construction — avoids UTC midnight shift
+                  const parts = (value as string).split('-').map(Number);
+                  return new Date(parts[0], parts[1] - 1, parts[2]);
+              })();
+
+    return d.toLocaleDateString('en-IN', {
         day:   '2-digit',
         month: 'short',
         year:  'numeric',

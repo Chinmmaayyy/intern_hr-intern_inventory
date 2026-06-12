@@ -5,27 +5,21 @@
  * -----------------
  * Bridge component that wraps MISFilterEngine + RevenueTable inside a single
  * client boundary. The parent page.tsx remains a Server Component and passes
- * the raw Server Action payload down as a prop.
+ * the live Server Action payload down as a prop.
  *
- * Filtering strategy — MOCK phase vs PRODUCTION phase:
- *
- *   MOCK (current):  Rows are filtered client-side from the full payload.
- *                    Totals are derived from filtered rows so the tfoot stays
- *                    accurate during visual testing.
- *
- *   PRODUCTION:      The page re-fetches via Server Action when URL params
- *                    change, receiving a pre-filtered payload with server-
- *                    computed totals. Client-side filtering becomes a no-op
- *                    (all rows pass) and totals come straight from payload.totals.
- *
- * The <RevenueTable> contract is identical in both phases.
+ * Filtering strategy:
+ *   - Date range (startDate / endDate) is handled server-side: page.tsx maps
+ *     URL params → Zod filter keys and forwards them to generateReport().
+ *   - Doctor filter is applied client-side here, because `doctor_name` is not
+ *     a supported Zod filter key in the current billing registry. Totals are
+ *     re-derived from the filtered rows so the tfoot stays accurate.
  */
 
 import React, { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { RevenueTable, type RevenuePayload, type RevenueRow } from '@/components/mis/RevenueTable';
-import { BarChart3, TrendingDown } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 
 interface DailyRevenueShellProps {
     /** Full payload from generateReport('billing-revenue-daily', filters). */
@@ -47,7 +41,10 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
         [allRows]
     );
 
-    // ── Client-side filter (mock phase only — see jsdoc above) ────────────
+    // ── Client-side doctor filter ──────────────────────────────────────────
+    // date_start / date_end are already applied server-side by the Server Action.
+    // The date comparisons below are kept as a safety guard for any residual
+    // string dates that bypass the server filter (e.g. stale URL params).
     const filteredRows = useMemo<RevenueRow[]>(
         () =>
             allRows.filter((row) => {
@@ -59,9 +56,10 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
         [allRows, startDate, endDate, doctor]
     );
 
-    // ── Derive totals from filtered rows (mock phase) ─────────────────────
-    // In production the payload already carries server-computed totals that
-    // reflect the applied filters; this derivation becomes redundant.
+    // ── Re-derive totals after client-side doctor filter ──────────────────
+    // Server totals reflect only the date range filter. After the doctor filter
+    // is applied client-side, totals must be recalculated so the tfoot stays
+    // consistent with the visible rows.
     const derivedTotals = useMemo(() => ({
         billed_amount:    filteredRows.reduce((s, r) => s + r.billed_amount,    0),
         collected_amount: filteredRows.reduce((s, r) => s + r.collected_amount, 0),
