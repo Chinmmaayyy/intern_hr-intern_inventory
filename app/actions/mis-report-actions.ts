@@ -1,8 +1,9 @@
 'use server';
 
 import { prisma } from '@/backend/db';
-import { runReport } from '@/lib/mis/runner';
+import { runReport, REGISTRY } from '@/lib/mis/runner';
 import { dailyRevenueReport } from '@/lib/mis/registry/billing';
+import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
 
 async function getSession() {
@@ -99,4 +100,60 @@ export async function listJobs(): Promise<JobStatusResponse[]> {
     createdAt: job.createdAt,
     finished_at: job.finished_at,
   }));
+}
+
+// ─── Excel Export ─────────────────────────────────────────────────────────────
+
+export interface ExportExcelResponse {
+  /** Base64-encoded .xlsx file contents */
+  base64: string;
+  /** Suggested filename for the download */
+  filename: string;
+}
+
+export async function exportReportToExcel(
+  reportId: string,
+  filters: unknown
+): Promise<ExportExcelResponse> {
+  const session = await getSession();
+
+  // 1. Look up column definitions from the registry
+  const reportDef = REGISTRY[reportId];
+  if (!reportDef) {
+    throw new Error(`Report ${reportId} not found in registry`);
+  }
+
+  // 2. Run the report (reuses the same runner as generateReport)
+  const result = await runReport(
+    reportId,
+    filters,
+    session.orgId,
+    session.userId,
+    session.permissions
+  );
+
+  // 3. Async exports are not supported yet
+  if (result.async) {
+    throw new Error(
+      'This report is too large for instant export. Async Excel exports will be supported soon.'
+    );
+  }
+
+  // 4. Generate the Excel buffer
+  const buffer = await generateExcelBuffer(
+    reportDef.columns,
+    result.rows ?? [],
+    result.totals ?? {}
+  );
+
+  // 5. Build a safe filename: "Daily_Revenue_by_Doctor_Department_2026-06-12.xlsx"
+  const dateSuffix = new Date().toISOString().split('T')[0];
+  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
+  const filename = `${safeName}_${dateSuffix}.xlsx`;
+
+  // 6. Return Base64 — safe for Server Action serialization
+  return {
+    base64: buffer.toString('base64'),
+    filename,
+  };
 }

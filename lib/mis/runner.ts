@@ -4,7 +4,7 @@ import { dailyRevenueReport } from './registry/billing';
 import { ValidatedFilters } from './types';
 
 // Add all reports to this registry map
-const REGISTRY: Record<string, typeof dailyRevenueReport> = {
+export const REGISTRY: Record<string, typeof dailyRevenueReport> = {
   [dailyRevenueReport.id]: dailyRevenueReport,
 };
 
