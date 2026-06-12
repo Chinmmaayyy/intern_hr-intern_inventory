@@ -7,4 +7,5 @@ export const EMPLOYEE_DOCUMENT_TYPES = [
   'PAN',
   'PASSPORT',
   'DRIVING_LICENSE',
+  
 ];
