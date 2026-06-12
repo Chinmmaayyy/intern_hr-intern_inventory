@@ -1196,14 +1196,14 @@ export const billingPendingBillsReport: ReportDefinition = {
         i.invoice_number as "invoice_number",
         COALESCE(opd.full_name, 'Unknown') as "patient_name",
         i.total_amount as "billed_amount",
-        i.amount_paid as "paid_amount",
-        i.amount_due as "balance_due",
+        i.paid_amount as "paid_amount",
+        i.balance_due as "balance_due",
         DATE_PART('day', ${new Date(as_of_date)} - DATE(i.created_at)) as "aging_days"
       FROM invoices i
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.amount_due > 0
+        AND i.balance_due > 0
         AND i.created_at <= ${new Date(as_of_date)}
         ${patient_type ? Prisma.sql`AND i.invoice_type = ${patient_type}` : Prisma.empty}
       ORDER BY "aging_days" DESC
@@ -1251,8 +1251,8 @@ export const billingPaymentServiceTypeReport: ReportDefinition = {
       SELECT 
         COALESCE(ii.service_category, ii.department, 'Unknown') as "service_category",
         SUM(ii.total_price) as "total_billed",
-        SUM(CASE WHEN i.payment_status = 'paid' OR i.amount_paid >= i.total_amount THEN ii.total_price ELSE (ii.total_price * (i.amount_paid / NULLIF(i.total_amount, 0))) END) as "total_collected",
-        SUM(ii.total_price - CASE WHEN i.payment_status = 'paid' OR i.amount_paid >= i.total_amount THEN ii.total_price ELSE (ii.total_price * (i.amount_paid / NULLIF(i.total_amount, 0))) END) as "outstanding"
+        SUM(CASE WHEN i.paid_amount >= i.total_amount THEN ii.total_price ELSE (ii.total_price * (i.paid_amount / NULLIF(i.total_amount, 0))) END) as "total_collected",
+        SUM(ii.total_price - CASE WHEN i.paid_amount >= i.total_amount THEN ii.total_price ELSE (ii.total_price * (i.paid_amount / NULLIF(i.total_amount, 0))) END) as "outstanding"
       FROM invoice_items ii
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
