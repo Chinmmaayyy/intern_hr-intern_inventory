@@ -26,7 +26,7 @@ export default function EmployeeDetailPage() {
     const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
-    const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'leaves' | 'shifts'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'leaves' | 'shifts' | 'documents'>('overview');
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [editForm, setEditForm] = useState({
@@ -35,6 +35,18 @@ export default function EmployeeDetailPage() {
         salaryBasic: 0,
         phone: '',
         email: '',
+
+        employmentType: '',
+        workLocation: '',
+        bloodGroup: '',
+        emergencyContact: '',
+
+        panNumber: '',
+        aadhaarMasked: '',
+        uanNumber: '',
+        pfNumber: '',
+        esicNumber: '',
+        paymentMode: '',
     });
 
     const loadData = useCallback(async () => {
@@ -53,6 +65,18 @@ export default function EmployeeDetailPage() {
                     salaryBasic: empRes.data.salary_basic || 0,
                     phone: empRes.data.phone || '',
                     email: empRes.data.email || '',
+
+                    employmentType: empRes.data.employment_type || '',
+                    workLocation: empRes.data.work_location || '',
+                    bloodGroup: empRes.data.blood_group || '',
+                    emergencyContact: empRes.data.emergency_contact || '',
+
+                    panNumber: empRes.data.pan_number || '',
+                    aadhaarMasked: empRes.data.aadhaar_masked || '',
+                    uanNumber: empRes.data.uan_number || '',
+                    pfNumber: empRes.data.pf_number || '',
+                    esicNumber: empRes.data.esic_number || '',
+                    paymentMode: empRes.data.payment_mode || '',
                 });
             } else {
                 setError(true);
@@ -105,6 +129,7 @@ export default function EmployeeDetailPage() {
         { key: 'attendance' as const, label: 'Attendance History', icon: Clock },
         { key: 'leaves' as const, label: 'Leave History', icon: FileText },
         { key: 'shifts' as const, label: 'Shift History', icon: Calendar },
+        { key: 'documents' as const, label: 'Documents', icon: FileText },
     ];
 
     const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString() : '-';
@@ -257,6 +282,41 @@ export default function EmployeeDetailPage() {
                                     />
                                 </div>
                                 <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                        Employment Type
+                                    </p>
+                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
+                                        {employee.employment_type || '-'}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                        Work Location
+                                    </p>
+                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
+                                        {employee.work_location || '-'}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                        Blood Group
+                                    </p>
+                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
+                                        {employee.blood_group || '-'}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                        Emergency Contact
+                                    </p>
+                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
+                                        {employee.emergency_contact || '-'}
+                                    </p>
+                                </div>
+                                <div>
                                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Phone</label>
                                     <input
                                         type="text"
@@ -292,6 +352,18 @@ export default function EmployeeDetailPage() {
                                                 salaryBasic: employee.salary_basic || 0,
                                                 phone: employee.phone || '',
                                                 email: employee.email || '',
+
+                                                employmentType: employee.employment_type || '',
+                                                workLocation: employee.work_location || '',
+                                                bloodGroup: employee.blood_group || '',
+                                                emergencyContact: employee.emergency_contact || '',
+
+                                                panNumber: employee.pan_number || '',
+                                                aadhaarMasked: employee.aadhaar_masked || '',
+                                                uanNumber: employee.uan_number || '',
+                                                pfNumber: employee.pf_number || '',
+                                                esicNumber: employee.esic_number || '',
+                                                paymentMode: employee.payment_mode || '',
                                             });
                                         }}
                                         className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-600 hover:bg-gray-50 flex items-center gap-2 transition-colors"
@@ -336,6 +408,68 @@ export default function EmployeeDetailPage() {
                                         }`}>
                                             {employee.is_active ? 'Active' : 'Inactive'}
                                         </span>
+                                    </div>
+
+                                    <div className="mt-8 border-t pt-6">
+                                        <h3 className="text-sm font-black text-gray-900 mb-4">
+                                            Statutory Information
+                                        </h3>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    PAN Number
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.pan_number || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Aadhaar
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.aadhaar_masked || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    UAN Number
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.uan_number || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    PF Number
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.pf_number || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    ESIC Number
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.esic_number || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Payment Mode
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.payment_mode || '-'}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -457,6 +591,37 @@ export default function EmployeeDetailPage() {
                                 <p className="text-gray-500 font-medium text-sm">No shift assignments found</p>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'documents' && (
+                    <div className="p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-black text-gray-900">
+                                Employee Documents
+                            </h3>
+
+                            <button className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white text-sm font-bold">
+                                Upload Document
+                            </button>
+                        </div>
+
+                        <div className="border border-dashed border-gray-300 rounded-2xl p-10 text-center">
+                            <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+                                <h4 className="font-semibold mb-2">Dummy Document</h4>
+                                <p>Type: Medical Registration</p>
+                                <p>Number: MCI-123456</p>
+                                <p>Authority: National Medical Commission</p>
+                                <p>Valid Till: 31-Dec-2027</p>
+                            </div>
+
+                            <p className="text-sm text-gray-500 mt-2">
+                                Medical Registration, Nursing Council,
+                                Degree Certificates, Contracts and ID Proofs
+                                will appear here.
+                            </p>
+                        </div>
                     </div>
                 )}
             </div>

@@ -18,7 +18,7 @@ export default function NewEmployeePage() {
     const [form, setForm] = useState({
         name: '', designation: '', departmentId: '',
         dateOfJoining: new Date().toISOString().split('T')[0],
-        salaryBasic: '', phone: '', email: '',
+        salaryBasic: '', phone: '', email: '', employmentType: '', branchId: '', gradeBand: '', workLocation: '', bloodGroup: '', emergencyContact: '', panNumber: '', aadhaarMasked: '', uanNumber: '', pfNumber: '', esicNumber: '', paymentMode: '',
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -38,6 +38,22 @@ export default function NewEmployeePage() {
                 salaryBasic: form.salaryBasic ? parseFloat(form.salaryBasic) : undefined,
                 phone: form.phone || undefined,
                 email: form.email || undefined,
+
+                //Employee Master Upgrade
+                employmentType: form.employmentType || undefined,
+                branchId: form.branchId || undefined,
+                gradeBand: form.gradeBand || undefined,
+                workLocation: form.workLocation || undefined,
+                bloodGroup: form.bloodGroup || undefined,
+                emergencyContact: form.emergencyContact || undefined,
+
+                panNumber: form.panNumber || undefined,
+                aadhaarMasked: form.aadhaarMasked || undefined,
+                uanNumber: form.uanNumber || undefined,
+                pfNumber: form.pfNumber || undefined,
+                esicNumber: form.esicNumber || undefined,
+
+                paymentMode: form.paymentMode || undefined,
             });
             if (res.success) {
                 router.push('/hr/employees');
@@ -126,6 +142,195 @@ export default function NewEmployeePage() {
                                 onChange={e => setForm({ ...form, email: e.target.value })}
                                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                                 placeholder="Optional" />
+                        </div>
+                    </div>
+
+                    {/* Employee Master Upgrade */}
+                    <div className="border-t pt-5">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                            Employment Information
+                        </h3>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Employment Type
+                                </label>
+
+                                <select
+                                    value={form.employmentType}
+                                    onChange={(e) =>
+                                        setForm({ ...form, employmentType: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                >
+                                    <option value="">Select</option>
+                                    <option value="PERMANENT">Permanent</option>
+                                    <option value="CONTRACT">Contract</option>
+                                    <option value="CONSULTANT_VISITING">Consultant Visiting</option>
+                                    <option value="CONSULTANT_RETAINER">Consultant Retainer</option>
+                                    <option value="INTERN_TRAINEE">Intern / Trainee</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Work Location
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.workLocation}
+                                    onChange={(e) =>
+                                        setForm({ ...form, workLocation: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    placeholder="Mumbai Branch"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Blood Group
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.bloodGroup}
+                                    onChange={(e) =>
+                                        setForm({ ...form, bloodGroup: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    placeholder="O+"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Emergency Contact
+                                </label>
+
+                                <input
+                                    type="tel"
+                                    value={form.emergencyContact}
+                                    onChange={(e) =>
+                                        setForm({
+                                            ...form,
+                                            emergencyContact: sanitizePhone(e.target.value)
+                                        })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    placeholder="9876543210"
+                                />
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <div className="border-t pt-5 mt-5">
+                        <h3 className="text-lg font-semibold text-gray-700 mb-4">
+                            Statutory Information
+                        </h3>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    PAN Number
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.panNumber}
+                                    onChange={(e) =>
+                                        setForm({ ...form, panNumber: e.target.value.toUpperCase() })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    placeholder="ABCDE1234F"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Aadhaar
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.aadhaarMasked}
+                                    onChange={(e) =>
+                                        setForm({ ...form, aadhaarMasked: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    placeholder="XXXX XXXX 1234"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    UAN Number
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.uanNumber}
+                                    onChange={(e) =>
+                                        setForm({ ...form, uanNumber: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    PF Number
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.pfNumber}
+                                    onChange={(e) =>
+                                        setForm({ ...form, pfNumber: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    ESIC Number
+                                </label>
+
+                                <input
+                                    type="text"
+                                    value={form.esicNumber}
+                                    onChange={(e) =>
+                                        setForm({ ...form, esicNumber: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
+                                    Payment Mode
+                                </label>
+
+                                <select
+                                    value={form.paymentMode}
+                                    onChange={(e) =>
+                                        setForm({ ...form, paymentMode: e.target.value })
+                                    }
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                >
+                                    <option value="">Select</option>
+                                    <option value="BANK">Bank</option>
+                                    <option value="CHEQUE">Cheque</option>
+                                    <option value="CASH">Cash</option>
+                                </select>
+                            </div>
+
                         </div>
                     </div>
 
