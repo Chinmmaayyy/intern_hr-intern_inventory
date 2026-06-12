@@ -26,9 +26,16 @@ import { CalendarRange, UserSearch, X, SlidersHorizontal } from 'lucide-react';
 interface MISFilterEngineProps {
     /** Unique, sorted list of doctor names derived from the dataset. */
     doctorOptions: string[];
+    /**
+     * When false, the Doctor filter select is hidden entirely.
+     * Set to false in generic/universal report routes where doctor
+     * is not a registry-level Zod filter key.
+     * @default true
+     */
+    showDoctorFilter?: boolean;
 }
 
-export function MISFilterEngine({ doctorOptions }: MISFilterEngineProps) {
+export function MISFilterEngine({ doctorOptions, showDoctorFilter = true }: MISFilterEngineProps) {
     const router      = useRouter();
     const pathname    = usePathname();
     const searchParams = useSearchParams();
@@ -139,36 +146,38 @@ export function MISFilterEngine({ doctorOptions }: MISFilterEngineProps) {
                     </div>
                 </div>
 
-                {/* ── Doctor Select ────────────────────────────────────────── */}
-                <div className="flex items-center gap-2 sm:w-56 shrink-0">
-                    <UserSearch className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                    <div className="flex-1">
-                        <label htmlFor="mis-doctor-select" className="sr-only">Filter by doctor</label>
-                        <select
-                            id="mis-doctor-select"
-                            value={doctor}
-                            onChange={handleDoctor}
-                            className="
-                                w-full text-sm font-semibold text-stone-900
-                                bg-gray-50 border border-gray-200 rounded-xl
-                                px-3 py-2 outline-none appearance-none
-                                focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400
-                                transition-all duration-150 cursor-pointer
-                                bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 20 20%22><path stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22M6 8l4 4 4-4%22/></svg>')]
-                                bg-no-repeat bg-[right_10px_center] bg-[length:16px]
-                                pr-8
-                            "
-                            aria-label="Filter by doctor"
-                        >
-                            <option value="">All Doctors</option>
-                            {doctorOptions.map((name) => (
-                                <option key={name} value={name}>
-                                    {name}
-                                </option>
-                            ))}
-                        </select>
+                {/* ── Doctor Select (hidden for reports without a doctor filter key) ── */}
+                {showDoctorFilter && (
+                    <div className="flex items-center gap-2 sm:w-56 shrink-0">
+                        <UserSearch className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        <div className="flex-1">
+                            <label htmlFor="mis-doctor-select" className="sr-only">Filter by doctor</label>
+                            <select
+                                id="mis-doctor-select"
+                                value={doctor}
+                                onChange={handleDoctor}
+                                className="
+                                    w-full text-sm font-semibold text-stone-900
+                                    bg-gray-50 border border-gray-200 rounded-xl
+                                    px-3 py-2 outline-none appearance-none
+                                    focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400
+                                    transition-all duration-150 cursor-pointer
+                                    bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 20 20%22><path stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22M6 8l4 4 4-4%22/></svg>')]
+                                    bg-no-repeat bg-[right_10px_center] bg-[length:16px]
+                                    pr-8
+                                "
+                                aria-label="Filter by doctor"
+                            >
+                                <option value="">All Doctors</option>
+                                {doctorOptions.map((name) => (
+                                    <option key={name} value={name}>
+                                        {name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* ── Clear Button ─────────────────────────────────────────── */}
                 {hasActiveFilters && (
@@ -199,7 +208,7 @@ export function MISFilterEngine({ doctorOptions }: MISFilterEngineProps) {
                     {endDate && (
                         <FilterPill label="To" value={formatDisplayDate(endDate)} onRemove={() => pushParam('endDate', '')} />
                     )}
-                    {doctor && (
+                    {showDoctorFilter && doctor && (
                         <FilterPill label="Doctor" value={doctor} onRemove={() => pushParam('doctor', '')} />
                     )}
                 </div>

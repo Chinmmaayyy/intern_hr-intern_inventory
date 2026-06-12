@@ -1,8 +1,44 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use server';
 
 import { prisma } from '@/backend/db';
 import { runReport, REGISTRY } from '@/lib/mis/runner';
-import { dailyRevenueReport } from '@/lib/mis/registry/billing';
+import { 
+  dailyRevenueReport,
+  billingDetailReport,
+  billingItemDetailReport,
+  billingSummaryReport,
+  billingSummaryDetailReport,
+  billingPaymentModeReport,
+  billingUhidAdvanceReport,
+  billingAdmissionAdvanceReport,
+  billingDiscountSummaryReport,
+  billingDueSettledReport,
+  billingRefundReport,
+  billingOpRefundReport,
+  billingDateWiseCashReport,
+  billingDoctorPayoutReport,
+  billingDoctorAccountPayableReport,
+  billingIpPackageReport,
+  billingHealthCheckupCountReport,
+  billingPayerAgreementExpiryReport,
+  billingDepositRefundReport,
+  billingPendingBillsReport,
+  billingPaymentServiceTypeReport,
+  billingPaymentSummaryReport,
+  billingRevenueSummaryReport,
+  billingCancelBillReport,
+  billingServiceTypeSummaryReport
+} from '@/lib/mis/registry/billing';
+import {
+  revenueDepartmentWiseReport,
+  revenuePayerTypeWiseReport,
+  revenuePayerNameWiseReport,
+  revenueServiceTypeWiseReport,
+  revenueBillingCategoryWiseReport,
+  revenueWardWiseReport
+} from '@/lib/mis/registry/revenue';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
 
@@ -14,7 +50,7 @@ async function getSession() {
   return {
     orgId: user.organizationId,
     userId: user.id,
-    permissions: ['mis_reports.billing.view'],
+    permissions: ['mis_reports.billing.view', 'mis_reports.revenue.view'],
   };
 }
 
@@ -22,7 +58,39 @@ export async function listCatalogue() {
   const session = await getSession();
   
   // Hardcoded for now, you would iterate over REGISTRY
-  const allReports = [dailyRevenueReport];
+  const allReports = [
+    dailyRevenueReport,
+    billingDetailReport,
+    billingItemDetailReport,
+    billingSummaryReport,
+    billingSummaryDetailReport,
+    billingPaymentModeReport,
+    billingUhidAdvanceReport,
+    billingAdmissionAdvanceReport,
+    billingDiscountSummaryReport,
+    billingDueSettledReport,
+    billingRefundReport,
+    billingOpRefundReport,
+    billingDateWiseCashReport,
+    billingDoctorPayoutReport,
+    billingDoctorAccountPayableReport,
+    billingIpPackageReport,
+    billingHealthCheckupCountReport,
+    billingPayerAgreementExpiryReport,
+    billingDepositRefundReport,
+    billingPendingBillsReport,
+    billingPaymentServiceTypeReport,
+    billingPaymentSummaryReport,
+    billingRevenueSummaryReport,
+    billingCancelBillReport,
+    billingServiceTypeSummaryReport,
+    revenueDepartmentWiseReport,
+    revenuePayerTypeWiseReport,
+    revenuePayerNameWiseReport,
+    revenueServiceTypeWiseReport,
+    revenueBillingCategoryWiseReport,
+    revenueWardWiseReport
+  ];
   
   const accessibleReports = allReports.filter(r => 
     session.permissions.includes(r.requiredPermission)

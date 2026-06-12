@@ -4,7 +4,7 @@ import {
     Users, UserCog, Building2, ShieldCheck, UserRound,
     Settings, Palette, FileText, Bell, Plug, Clock, BarChart3, Lock,
     Workflow, Scissors, GitBranch, DatabaseBackup, BookOpen, Database,
-    ShieldAlert, Scale, Siren, SlidersHorizontal,
+    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -27,6 +27,13 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
         items: [
             { label: 'Dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
             { label: 'Analytics', href: '/admin/analytics', icon: LineChart },
+        ],
+    },
+    {
+        title: 'Reports & MIS',
+        collapsible: true,
+        items: [
+            { label: 'Daily Revenue', href: '/admin/mis/revenue/daily', icon: LayoutList },
         ],
     },
     {
