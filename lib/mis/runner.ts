@@ -13,7 +13,12 @@ import {
   billingAdmissionAdvanceReport,
   billingDiscountSummaryReport,
   billingDueSettledReport,
-  billingRefundReport
+  billingRefundReport,
+  billingOpRefundReport,
+  billingDateWiseCashReport,
+  billingDoctorPayoutReport,
+  billingDoctorAccountPayableReport,
+  billingIpPackageReport
 } from './registry/billing';
 import { ValidatedFilters } from './types';
 
@@ -30,6 +35,11 @@ export const REGISTRY: Record<string, any> = {
   [billingDiscountSummaryReport.id]: billingDiscountSummaryReport,
   [billingDueSettledReport.id]: billingDueSettledReport,
   [billingRefundReport.id]: billingRefundReport,
+  [billingOpRefundReport.id]: billingOpRefundReport,
+  [billingDateWiseCashReport.id]: billingDateWiseCashReport,
+  [billingDoctorPayoutReport.id]: billingDoctorPayoutReport,
+  [billingDoctorAccountPayableReport.id]: billingDoctorAccountPayableReport,
+  [billingIpPackageReport.id]: billingIpPackageReport,
 };
 
 export async function runReport(

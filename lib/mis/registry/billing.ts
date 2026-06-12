@@ -680,3 +680,331 @@ export const billingRefundReport: ReportDefinition = {
     return { rows: serializedRows, totals };
   },
 };
+
+export const billingOpRefundReport: ReportDefinition = {
+  id: 'billing-op-refund',
+  category: ReportCategory.Billing,
+  name: 'Billing - OP Refund',
+  description: 'Fetch refunds specifically for Outpatient (OPD) invoices.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    department_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'uhid', label: 'UHID', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'op_invoice_number', label: 'OP Invoice No', type: 'string' },
+    { key: 'refund_amount', label: 'Refund Amount', type: 'currency', total: 'sum' },
+    { key: 'processed_by', label: 'Processed By', type: 'string' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, department_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(r.created_at) as "date",
+        i.patient_id as "uhid",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        i.invoice_number as "op_invoice_number",
+        r.amount as "refund_amount",
+        COALESCE(r.processed_by, 'System') as "processed_by"
+      FROM refunds r
+      JOIN invoices i ON r.invoice_id = i.invoice_number AND i."organizationId" = ${orgId}
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      LEFT JOIN "users" u ON i.doctor_id = u.id
+      WHERE r."organizationId" = ${orgId}
+        AND r.status = 'Processed'
+        AND (i.invoice_type = 'OPD' OR i.admission_id IS NULL)
+        AND r.created_at >= ${new Date(date_start)}
+        AND r.created_at <= ${new Date(date_end)}
+        ${department_id ? Prisma.sql`AND (u.department = ${department_id} OR u.specialty = ${department_id})` : Prisma.empty}
+      ORDER BY DATE(r.created_at) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.refund_amount += Number(row.refund_amount || 0);
+      return acc;
+    }, { refund_amount: 0 });
+    return { 
+      rows: rows.map(r => ({ ...r, refund_amount: Number(r.refund_amount) })), 
+      totals 
+    };
+  },
+};
+
+export const billingDateWiseCashReport: ReportDefinition = {
+  id: 'billing-date-wise-cash',
+  category: ReportCategory.Billing,
+  name: 'Billing - Date Wise Cash Collection',
+  description: 'Aggregate physical cash collected per day.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    cashier_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'collection_date', label: 'Collection Date', type: 'date' },
+    { key: 'cashier_name', label: 'Cashier Name', type: 'string' },
+    { key: 'total_cash_collected', label: 'Total Cash Collected', type: 'currency', total: 'sum' },
+    { key: 'total_cash_refunded', label: 'Total Cash Refunded', type: 'currency', total: 'sum' },
+    { key: 'net_cash_in_drawer', label: 'Net Cash in Drawer', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'collection_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, cashier_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      WITH cash_payments AS (
+        SELECT 
+          DATE(ps.payment_date) as cdate,
+          COALESCE(ps.received_by, 'System') as cashier_id,
+          SUM(ps.amount) as collected
+        FROM payment_splits ps
+        JOIN invoices i ON ps.invoice_id = i.id
+        WHERE i."organizationId" = ${orgId}
+          AND ps.status = 'received'
+          AND ps.payment_method ILIKE '%cash%'
+          AND ps.payment_date >= ${new Date(date_start)}
+          AND ps.payment_date <= ${new Date(date_end)}
+        GROUP BY DATE(ps.payment_date), ps.received_by
+      ),
+      cash_refunds AS (
+        SELECT 
+          DATE(r.created_at) as cdate,
+          COALESCE(r.processed_by, 'System') as cashier_id,
+          SUM(r.amount) as refunded
+        FROM refunds r
+        LEFT JOIN payments p ON p.id::text = r.payment_id
+        WHERE r."organizationId" = ${orgId}
+          AND r.status = 'Processed'
+          AND p.payment_method ILIKE '%cash%'
+          AND r.created_at >= ${new Date(date_start)}
+          AND r.created_at <= ${new Date(date_end)}
+        GROUP BY DATE(r.created_at), r.processed_by
+      )
+      SELECT 
+        COALESCE(p.cdate, r.cdate) as "collection_date",
+        COALESCE(p.cashier_id, r.cashier_id) as "cashier_name",
+        COALESCE(p.collected, 0) as "total_cash_collected",
+        COALESCE(r.refunded, 0) as "total_cash_refunded",
+        (COALESCE(p.collected, 0) - COALESCE(r.refunded, 0)) as "net_cash_in_drawer"
+      FROM cash_payments p
+      FULL OUTER JOIN cash_refunds r ON p.cdate = r.cdate AND p.cashier_id = r.cashier_id
+      WHERE 1=1
+        ${cashier_id ? Prisma.sql`AND COALESCE(p.cashier_id, r.cashier_id) = ${cashier_id}` : Prisma.empty}
+      ORDER BY "collection_date" DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.total_cash_collected += Number(row.total_cash_collected || 0);
+      acc.total_cash_refunded += Number(row.total_cash_refunded || 0);
+      acc.net_cash_in_drawer += Number(row.net_cash_in_drawer || 0);
+      return acc;
+    }, { total_cash_collected: 0, total_cash_refunded: 0, net_cash_in_drawer: 0 });
+    
+    return { 
+      rows: rows.map(r => ({
+        ...r,
+        total_cash_collected: Number(r.total_cash_collected),
+        total_cash_refunded: Number(r.total_cash_refunded),
+        net_cash_in_drawer: Number(r.net_cash_in_drawer),
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingDoctorPayoutReport: ReportDefinition = {
+  id: 'billing-doctor-payout',
+  category: ReportCategory.Billing,
+  name: 'Billing - Doctor Payout',
+  description: 'Calculate revenue share owed to doctors for services performed.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    doctor_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'doctor_name', label: 'Doctor Name', type: 'string' },
+    { key: 'service_name', label: 'Service Name', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'billed_amount', label: 'Billed Amount', type: 'currency', total: 'sum' },
+    { key: 'doctor_share_percent', label: 'Share %', type: 'string' },
+    { key: 'payout_amount', label: 'Payout Amount', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, doctor_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(i.created_at) as "date",
+        COALESCE(u.name, 'Unknown') as "doctor_name",
+        ii.description as "service_name",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        ii.total_price as "billed_amount",
+        '50%' as "doctor_share_percent",
+        (ii.total_price * 0.5) as "payout_amount"
+      FROM invoice_items ii
+      JOIN invoices i ON ii.invoice_id = i.id
+      LEFT JOIN "users" u ON i.doctor_id = u.id
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+        ${doctor_id ? Prisma.sql`AND u.id = ${doctor_id}` : Prisma.empty}
+      ORDER BY DATE(i.created_at) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.billed_amount += Number(row.billed_amount || 0);
+      acc.payout_amount += Number(row.payout_amount || 0);
+      return acc;
+    }, { billed_amount: 0, payout_amount: 0 });
+    
+    return { 
+      rows: rows.map(r => ({
+        ...r,
+        billed_amount: Number(r.billed_amount),
+        payout_amount: Number(r.payout_amount),
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingDoctorAccountPayableReport: ReportDefinition = {
+  id: 'billing-doctor-account-payable',
+  category: ReportCategory.Billing,
+  name: 'Billing - Doctor Account Payable',
+  description: 'Aggregate total outstanding payouts owed to doctors up to a certain date.',
+  filters: z.object({
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'doctor_id', label: 'Doctor ID', type: 'string' },
+    { key: 'doctor_name', label: 'Doctor Name', type: 'string' },
+    { key: 'department', label: 'Department', type: 'string' },
+    { key: 'total_earned', label: 'Total Earned', type: 'currency', total: 'sum' },
+    { key: 'total_paid', label: 'Total Paid', type: 'currency', total: 'sum' },
+    { key: 'balance_payable', label: 'Balance Payable', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'balance_payable', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        u.id as "doctor_id",
+        COALESCE(u.name, 'Unknown') as "doctor_name",
+        COALESCE(u.department, u.specialty, 'Unknown') as "department",
+        SUM(ii.total_price * 0.5) as "total_earned",
+        0 as "total_paid",
+        SUM(ii.total_price * 0.5) as "balance_payable"
+      FROM invoice_items ii
+      JOIN invoices i ON ii.invoice_id = i.id
+      JOIN "users" u ON i.doctor_id = u.id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.created_at <= ${new Date(date_end)}
+        AND (u.role = 'doctor' OR u.role = 'surgeon')
+      GROUP BY u.id, u.name, u.department, u.specialty
+      ORDER BY SUM(ii.total_price * 0.5) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.total_earned += Number(row.total_earned || 0);
+      acc.total_paid += Number(row.total_paid || 0);
+      acc.balance_payable += Number(row.balance_payable || 0);
+      return acc;
+    }, { total_earned: 0, total_paid: 0, balance_payable: 0 });
+    
+    return { 
+      rows: rows.map(r => ({
+        ...r,
+        total_earned: Number(r.total_earned),
+        total_paid: Number(r.total_paid),
+        balance_payable: Number(r.balance_payable),
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingIpPackageReport: ReportDefinition = {
+  id: 'billing-ip-package',
+  category: ReportCategory.Billing,
+  name: 'Billing - IP Package',
+  description: 'Fetch Inpatient (IPD) admissions billed under fixed packages.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    package_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'admission_date', label: 'Admission Date', type: 'date' },
+    { key: 'ip_number', label: 'IP Number', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'package_name', label: 'Package Name', type: 'string' },
+    { key: 'package_amount', label: 'Package Amount', type: 'currency', total: 'sum' },
+    { key: 'additional_billed', label: 'Additional Billed', type: 'currency', total: 'sum' },
+    { key: 'total_invoice', label: 'Total Invoice', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'admission_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, package_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      WITH package_items AS (
+        SELECT 
+          ii.invoice_id,
+          MAX(ii.description) as package_name,
+          SUM(ii.total_price) as package_amount
+        FROM invoice_items ii
+        WHERE (ii.department ILIKE '%package%' OR ii.service_category ILIKE '%package%' OR ii.description ILIKE '%package%')
+          ${package_id ? Prisma.sql`AND (ii.ref_id = ${package_id} OR ii.description ILIKE ${'%' + package_id + '%'})` : Prisma.empty}
+        GROUP BY ii.invoice_id
+      )
+      SELECT 
+        DATE(adm.admission_date) as "admission_date",
+        i.admission_id as "ip_number",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        pi.package_name as "package_name",
+        pi.package_amount as "package_amount",
+        (i.total_amount - pi.package_amount) as "additional_billed",
+        i.total_amount as "total_invoice"
+      FROM invoices i
+      JOIN package_items pi ON i.id = pi.invoice_id
+      LEFT JOIN admissions adm ON i.admission_id = adm.admission_id
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.invoice_type = 'IPD'
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+      ORDER BY DATE(adm.admission_date) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.package_amount += Number(row.package_amount || 0);
+      acc.additional_billed += Number(row.additional_billed || 0);
+      acc.total_invoice += Number(row.total_invoice || 0);
+      return acc;
+    }, { package_amount: 0, additional_billed: 0, total_invoice: 0 });
+    
+    return { 
+      rows: rows.map(r => ({
+        ...r,
+        package_amount: Number(r.package_amount),
+        additional_billed: Number(r.additional_billed),
+        total_invoice: Number(r.total_invoice),
+      })), 
+      totals 
+    };
+  },
+};
