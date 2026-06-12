@@ -11,7 +11,7 @@ export default async function MISLayout({ children }: { children: React.ReactNod
   const catalogue = await listCatalogue();
   
   return (
-    <div className="flex bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden min-h-[calc(100vh-8rem)]">
+    <div className="flex bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden h-[calc(100vh-8rem)]">
       {/* Sub-Sidebar for MIS Reports */}
       <aside className="w-72 bg-gray-50/50 border-r border-gray-100 flex flex-col shrink-0">
         <div className="p-6 border-b border-gray-100 bg-white">
