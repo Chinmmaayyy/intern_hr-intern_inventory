@@ -20,7 +20,12 @@ import {
   billingDateWiseCashReport,
   billingDoctorPayoutReport,
   billingDoctorAccountPayableReport,
-  billingIpPackageReport
+  billingIpPackageReport,
+  billingHealthCheckupCountReport,
+  billingPayerAgreementExpiryReport,
+  billingDepositRefundReport,
+  billingPendingBillsReport,
+  billingPaymentServiceTypeReport
 } from '@/lib/mis/registry/billing';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
@@ -57,7 +62,12 @@ export async function listCatalogue() {
     billingDateWiseCashReport,
     billingDoctorPayoutReport,
     billingDoctorAccountPayableReport,
-    billingIpPackageReport
+    billingIpPackageReport,
+    billingHealthCheckupCountReport,
+    billingPayerAgreementExpiryReport,
+    billingDepositRefundReport,
+    billingPendingBillsReport,
+    billingPaymentServiceTypeReport
   ];
   
   const accessibleReports = allReports.filter(r => 
