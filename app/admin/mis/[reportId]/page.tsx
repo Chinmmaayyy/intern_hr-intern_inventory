@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React from 'react';
 import { listCatalogue } from '@/app/actions/mis-report-actions';
 import { DynamicReportViewer } from '@/components/mis/DynamicReportViewer';

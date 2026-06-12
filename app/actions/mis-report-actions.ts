@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use server';
 
 import { prisma } from '@/backend/db';
@@ -8,7 +10,12 @@ import {
   billingItemDetailReport,
   billingSummaryReport,
   billingSummaryDetailReport,
-  billingPaymentModeReport
+  billingPaymentModeReport,
+  billingUhidAdvanceReport,
+  billingAdmissionAdvanceReport,
+  billingDiscountSummaryReport,
+  billingDueSettledReport,
+  billingRefundReport
 } from '@/lib/mis/registry/billing';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
@@ -35,7 +42,12 @@ export async function listCatalogue() {
     billingItemDetailReport,
     billingSummaryReport,
     billingSummaryDetailReport,
-    billingPaymentModeReport
+    billingPaymentModeReport,
+    billingUhidAdvanceReport,
+    billingAdmissionAdvanceReport,
+    billingDiscountSummaryReport,
+    billingDueSettledReport,
+    billingRefundReport
   ];
   
   const accessibleReports = allReports.filter(r => 

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
@@ -368,6 +370,311 @@ export const billingPaymentModeReport: ReportDefinition = {
       ...row,
       transaction_count: Number(row.transaction_count),
       collected_amount: Number(row.collected_amount),
+    }));
+
+    return { rows: serializedRows, totals };
+  },
+};
+
+// ==========================================
+// BATCH 2: NEW BILLING REPORTS (SN 14 - 18)
+// ==========================================
+
+export const billingUhidAdvanceReport: ReportDefinition = {
+  id: 'billing-uhid-advance',
+  category: ReportCategory.Billing,
+  name: 'Billing - UHID Advance Deposit',
+  description: 'Fetch advance payments made directly against a patient UHID (unlinked to a specific admission).',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'uhid', label: 'UHID', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'advance_amount', label: 'Advance Amount', type: 'currency', total: 'sum' },
+    { key: 'payment_mode', label: 'Payment Mode', type: 'string' },
+    { key: 'collected_by', label: 'Collected By', type: 'string' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(pd.created_at) as "date",
+        pd.patient_id as "uhid",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        pd.amount as "advance_amount",
+        pd.payment_method as "payment_mode",
+        COALESCE(pd.collected_by, 'System') as "collected_by"
+      FROM patient_deposits pd
+      LEFT JOIN "OPD_REG" opd ON pd.patient_id = opd.patient_id
+      WHERE pd."organizationId" = ${orgId}
+        AND pd.admission_id IS NULL
+        AND pd.created_at >= ${new Date(date_start)}
+        AND pd.created_at <= ${new Date(date_end)}
+      ORDER BY DATE(pd.created_at) DESC
+    `;
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.advance_amount += Number(row.advance_amount || 0);
+        return acc;
+      },
+      { advance_amount: 0 }
+    );
+
+    const serializedRows = rows.map(row => ({
+      ...row,
+      advance_amount: Number(row.advance_amount),
+    }));
+
+    return { rows: serializedRows, totals };
+  },
+};
+
+export const billingAdmissionAdvanceReport: ReportDefinition = {
+  id: 'billing-admission-advance',
+  category: ReportCategory.Billing,
+  name: 'Billing - Admission Advance Deposit',
+  description: 'Fetch advance payments made against specific IPD admissions.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    department_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'uhid', label: 'UHID', type: 'string' },
+    { key: 'ip_number', label: 'IP Number', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'advance_amount', label: 'Advance Amount', type: 'currency', total: 'sum' },
+    { key: 'payment_mode', label: 'Payment Mode', type: 'string' },
+    { key: 'collected_by', label: 'Collected By', type: 'string' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, department_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(pd.created_at) as "date",
+        pd.patient_id as "uhid",
+        pd.admission_id as "ip_number",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        pd.amount as "advance_amount",
+        pd.payment_method as "payment_mode",
+        COALESCE(pd.collected_by, 'System') as "collected_by"
+      FROM patient_deposits pd
+      LEFT JOIN "OPD_REG" opd ON pd.patient_id = opd.patient_id
+      LEFT JOIN admissions adm ON pd.admission_id = adm.admission_id
+      LEFT JOIN wards w ON adm.ward_id = w.ward_id
+      WHERE pd."organizationId" = ${orgId}
+        AND pd.admission_id IS NOT NULL
+        AND pd.created_at >= ${new Date(date_start)}
+        AND pd.created_at <= ${new Date(date_end)}
+        ${department_id ? Prisma.sql`AND w.department_id = ${department_id}` : Prisma.empty}
+      ORDER BY DATE(pd.created_at) DESC
+    `;
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.advance_amount += Number(row.advance_amount || 0);
+        return acc;
+      },
+      { advance_amount: 0 }
+    );
+
+    const serializedRows = rows.map(row => ({
+      ...row,
+      advance_amount: Number(row.advance_amount),
+    }));
+
+    return { rows: serializedRows, totals };
+  },
+};
+
+export const billingDiscountSummaryReport: ReportDefinition = {
+  id: 'billing-discount-summary',
+  category: ReportCategory.Billing,
+  name: 'Billing - Discount Summary',
+  description: 'Aggregate discounts given on invoices.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+    branch_id: z.string().optional(),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'invoice_number', label: 'Invoice No', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'invoice_total', label: 'Invoice Total', type: 'currency', total: 'sum' },
+    { key: 'discount_amount', label: 'Discount Amount', type: 'currency', total: 'sum' },
+    { key: 'discount_reason', label: 'Discount Reason', type: 'string' },
+    { key: 'authorized_by', label: 'Authorized By', type: 'string' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end, branch_id } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(i.created_at) as "date",
+        i.invoice_number as "invoice_number",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        i.total_amount as "invoice_total",
+        i.total_discount as "discount_amount",
+        COALESCE(i.notes, 'N/A') as "discount_reason",
+        COALESCE(i.approved_by, 'System') as "authorized_by"
+      FROM invoices i
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.total_discount > 0
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+      ORDER BY DATE(i.created_at) DESC
+    `;
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.invoice_total += Number(row.invoice_total || 0);
+        acc.discount_amount += Number(row.discount_amount || 0);
+        return acc;
+      },
+      { invoice_total: 0, discount_amount: 0 }
+    );
+
+    const serializedRows = rows.map(row => ({
+      ...row,
+      invoice_total: Number(row.invoice_total),
+      discount_amount: Number(row.discount_amount),
+    }));
+
+    return { rows: serializedRows, totals };
+  },
+};
+
+export const billingDueSettledReport: ReportDefinition = {
+  id: 'billing-due-settled',
+  category: ReportCategory.Billing,
+  name: 'Billing - Due Settled',
+  description: 'Fetch payments made to settle previously pending or credit bills.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'settlement_date', label: 'Settlement Date', type: 'date' },
+    { key: 'invoice_number', label: 'Invoice No', type: 'string' },
+    { key: 'original_bill_date', label: 'Original Bill Date', type: 'date' },
+    { key: 'billed_amount', label: 'Billed Amount', type: 'currency', total: 'sum' },
+    { key: 'settled_amount', label: 'Settled Amount', type: 'currency', total: 'sum' },
+    { key: 'payment_mode', label: 'Payment Mode', type: 'string' },
+  ],
+  defaultSort: { column: 'settlement_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(p.created_at) as "settlement_date",
+        i.invoice_number as "invoice_number",
+        DATE(i.created_at) as "original_bill_date",
+        i.net_amount as "billed_amount",
+        p.amount as "settled_amount",
+        p.payment_method as "payment_mode"
+      FROM payments p
+      JOIN invoices i ON p.invoice_id = i.id
+      WHERE i."organizationId" = ${orgId}
+        AND p.status = 'Completed'
+        AND p.payment_type = 'Settlement'
+        AND p.created_at >= ${new Date(date_start)}
+        AND p.created_at <= ${new Date(date_end)}
+      ORDER BY DATE(p.created_at) DESC
+    `;
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.billed_amount += Number(row.billed_amount || 0);
+        acc.settled_amount += Number(row.settled_amount || 0);
+        return acc;
+      },
+      { billed_amount: 0, settled_amount: 0 }
+    );
+
+    const serializedRows = rows.map(row => ({
+      ...row,
+      billed_amount: Number(row.billed_amount),
+      settled_amount: Number(row.settled_amount),
+    }));
+
+    return { rows: serializedRows, totals };
+  },
+};
+
+export const billingRefundReport: ReportDefinition = {
+  id: 'billing-refund',
+  category: ReportCategory.Billing,
+  name: 'Billing - Refund',
+  description: 'Fetch refund transactions and reasons.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'uhid', label: 'UHID', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'original_invoice_number', label: 'Original Invoice No', type: 'string' },
+    { key: 'refund_amount', label: 'Refund Amount', type: 'currency', total: 'sum' },
+    { key: 'refund_mode', label: 'Refund Mode', type: 'string' },
+    { key: 'reason', label: 'Reason', type: 'string' },
+    { key: 'processed_by', label: 'Processed By', type: 'string' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(r.created_at) as "date",
+        i.patient_id as "uhid",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        r.invoice_id as "original_invoice_number",
+        r.amount as "refund_amount",
+        COALESCE(p.payment_method, 'Refund') as "refund_mode",
+        r.reason as "reason",
+        COALESCE(r.processed_by, 'System') as "processed_by"
+      FROM refunds r
+      LEFT JOIN invoices i ON i.invoice_number = r.invoice_id AND i."organizationId" = ${orgId}
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      LEFT JOIN payments p ON p.id::text = r.payment_id
+      WHERE r."organizationId" = ${orgId}
+        AND r.status = 'Processed'
+        AND r.created_at >= ${new Date(date_start)}
+        AND r.created_at <= ${new Date(date_end)}
+      ORDER BY DATE(r.created_at) DESC
+    `;
+
+    const totals = rows.reduce(
+      (acc, row) => {
+        acc.refund_amount += Number(row.refund_amount || 0);
+        return acc;
+      },
+      { refund_amount: 0 }
+    );
+
+    const serializedRows = rows.map(row => ({
+      ...row,
+      refund_amount: Number(row.refund_amount),
     }));
 
     return { rows: serializedRows, totals };

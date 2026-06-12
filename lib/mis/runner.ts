@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { 
@@ -6,7 +8,12 @@ import {
   billingItemDetailReport,
   billingSummaryReport,
   billingSummaryDetailReport,
-  billingPaymentModeReport
+  billingPaymentModeReport,
+  billingUhidAdvanceReport,
+  billingAdmissionAdvanceReport,
+  billingDiscountSummaryReport,
+  billingDueSettledReport,
+  billingRefundReport
 } from './registry/billing';
 import { ValidatedFilters } from './types';
 
@@ -18,6 +25,11 @@ export const REGISTRY: Record<string, any> = {
   [billingSummaryReport.id]: billingSummaryReport,
   [billingSummaryDetailReport.id]: billingSummaryDetailReport,
   [billingPaymentModeReport.id]: billingPaymentModeReport,
+  [billingUhidAdvanceReport.id]: billingUhidAdvanceReport,
+  [billingAdmissionAdvanceReport.id]: billingAdmissionAdvanceReport,
+  [billingDiscountSummaryReport.id]: billingDiscountSummaryReport,
+  [billingDueSettledReport.id]: billingDueSettledReport,
+  [billingRefundReport.id]: billingRefundReport,
 };
 
 export async function runReport(
