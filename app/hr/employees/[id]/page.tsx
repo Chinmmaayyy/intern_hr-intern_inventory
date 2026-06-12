@@ -612,7 +612,7 @@ export default function EmployeeDetailPage() {
                                 <h4 className="font-semibold mb-2">Dummy Document</h4>
                                 <p>Type: Medical Registration</p>
                                 <p>Number: MCI-123456</p>
-                                <p>Authority: National Medical Commission</p>
+                                <p>Authority: National Medical Commissions</p>
                                 <p>Valid Till: 31-Dec-2027</p>
                             </div>
 
