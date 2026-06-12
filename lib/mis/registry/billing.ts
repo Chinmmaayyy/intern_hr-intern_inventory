@@ -7,7 +7,7 @@ import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
 export const dailyRevenueReport: ReportDefinition = {
   id: 'billing-revenue-daily',
-  category: ReportCategory.Revenue,
+  category: ReportCategory.Daily_Revenue,
   name: 'Daily Revenue by Doctor & Department',
   description: 'Shows daily billed and collected amounts grouped by doctor and department.',
   filters: z.object({
@@ -1274,6 +1274,220 @@ export const billingPaymentServiceTypeReport: ReportDefinition = {
         total_billed: Number(r.total_billed),
         total_collected: Number(r.total_collected),
         outstanding: Number(r.outstanding) 
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingPaymentSummaryReport: ReportDefinition = {
+  id: 'billing-payment-summary',
+  category: ReportCategory.Billing,
+  name: 'Billing - Payment Summary',
+  description: 'High-level summary of total payments received, grouped by day and payment mode.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'total_cash', label: 'Total Cash', type: 'currency', total: 'sum' },
+    { key: 'total_card', label: 'Total Card', type: 'currency', total: 'sum' },
+    { key: 'total_upi', label: 'Total UPI', type: 'currency', total: 'sum' },
+    { key: 'total_collected', label: 'Total Collected', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(ps.payment_date) as "date",
+        SUM(CASE WHEN ps.payment_method ILIKE '%cash%' THEN ps.amount ELSE 0 END) as "total_cash",
+        SUM(CASE WHEN ps.payment_method ILIKE '%card%' THEN ps.amount ELSE 0 END) as "total_card",
+        SUM(CASE WHEN ps.payment_method ILIKE '%upi%' THEN ps.amount ELSE 0 END) as "total_upi",
+        SUM(ps.amount) as "total_collected"
+      FROM payment_splits ps
+      JOIN invoices i ON ps.invoice_id = i.id
+      WHERE i."organizationId" = ${orgId}
+        AND ps.status = 'received'
+        AND ps.payment_date >= ${new Date(date_start)}
+        AND ps.payment_date <= ${new Date(date_end)}
+      GROUP BY DATE(ps.payment_date)
+      ORDER BY DATE(ps.payment_date) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.total_cash += Number(row.total_cash || 0);
+      acc.total_card += Number(row.total_card || 0);
+      acc.total_upi += Number(row.total_upi || 0);
+      acc.total_collected += Number(row.total_collected || 0);
+      return acc;
+    }, { total_cash: 0, total_card: 0, total_upi: 0, total_collected: 0 });
+    return { 
+      rows: rows.map(r => ({ 
+        ...r, 
+        total_cash: Number(r.total_cash),
+        total_card: Number(r.total_card),
+        total_upi: Number(r.total_upi),
+        total_collected: Number(r.total_collected) 
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingRevenueSummaryReport: ReportDefinition = {
+  id: 'billing-revenue-summary',
+  category: ReportCategory.Billing,
+  name: 'Billing - Billing Revenue',
+  description: 'Aggregate total billed revenue vs actual collected revenue.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'date', label: 'Date', type: 'date' },
+    { key: 'total_billed', label: 'Total Billed', type: 'currency', total: 'sum' },
+    { key: 'total_collected', label: 'Total Collected', type: 'currency', total: 'sum' },
+    { key: 'total_discount', label: 'Total Discount', type: 'currency', total: 'sum' },
+    { key: 'outstanding_balance', label: 'Outstanding Balance', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(i.created_at) as "date",
+        SUM(i.total_amount) as "total_billed",
+        SUM(i.paid_amount) as "total_collected",
+        SUM(i.total_discount) as "total_discount",
+        SUM(i.balance_due) as "outstanding_balance"
+      FROM invoices i
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+      GROUP BY DATE(i.created_at)
+      ORDER BY DATE(i.created_at) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.total_billed += Number(row.total_billed || 0);
+      acc.total_collected += Number(row.total_collected || 0);
+      acc.total_discount += Number(row.total_discount || 0);
+      acc.outstanding_balance += Number(row.outstanding_balance || 0);
+      return acc;
+    }, { total_billed: 0, total_collected: 0, total_discount: 0, outstanding_balance: 0 });
+    return { 
+      rows: rows.map(r => ({ 
+        ...r, 
+        total_billed: Number(r.total_billed),
+        total_collected: Number(r.total_collected),
+        total_discount: Number(r.total_discount),
+        outstanding_balance: Number(r.outstanding_balance) 
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingCancelBillReport: ReportDefinition = {
+  id: 'billing-cancel-bill',
+  category: ReportCategory.Billing,
+  name: 'Billing - Cancel Bill Report',
+  description: 'Fetch all invoices where status is "cancelled".',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'cancel_date', label: 'Cancel Date', type: 'date' },
+    { key: 'invoice_number', label: 'Invoice Number', type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'original_amount', label: 'Original Amount', type: 'currency', total: 'sum' },
+    { key: 'cancellation_reason', label: 'Cancellation Reason', type: 'string' },
+    { key: 'cancelled_by', label: 'Cancelled By', type: 'string' },
+  ],
+  defaultSort: { column: 'cancel_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        DATE(i.updated_at) as "cancel_date",
+        i.invoice_number as "invoice_number",
+        COALESCE(opd.full_name, 'Unknown') as "patient_name",
+        i.total_amount as "original_amount",
+        COALESCE(i.notes, 'Cancelled') as "cancellation_reason",
+        'System' as "cancelled_by"
+      FROM invoices i
+      LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status ILIKE 'cancelled'
+        AND i.updated_at >= ${new Date(date_start)}
+        AND i.updated_at <= ${new Date(date_end)}
+      ORDER BY DATE(i.updated_at) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.original_amount += Number(row.original_amount || 0);
+      return acc;
+    }, { original_amount: 0 });
+    return { 
+      rows: rows.map(r => ({ 
+        ...r, 
+        original_amount: Number(r.original_amount) 
+      })), 
+      totals 
+    };
+  },
+};
+
+export const billingServiceTypeSummaryReport: ReportDefinition = {
+  id: 'billing-service-type-summary',
+  category: ReportCategory.Billing,
+  name: 'Billing - Service Type Summary',
+  description: 'Aggregate billed amounts grouped by broad service categories.',
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
+  columns: [
+    { key: 'service_category', label: 'Service Category', type: 'string' },
+    { key: 'invoice_count', label: 'Invoice Count', type: 'number', total: 'sum' },
+    { key: 'total_billed', label: 'Total Billed Amount', type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'total_billed', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.billing.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT 
+        COALESCE(ii.service_category, ii.department, 'Other') as "service_category",
+        COUNT(DISTINCT ii.invoice_id) as "invoice_count",
+        SUM(ii.total_price) as "total_billed"
+      FROM invoice_items ii
+      JOIN invoices i ON ii.invoice_id = i.id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+      GROUP BY COALESCE(ii.service_category, ii.department, 'Other')
+      ORDER BY SUM(ii.total_price) DESC
+    `;
+    const totals = rows.reduce((acc, row) => {
+      acc.invoice_count += Number(row.invoice_count || 0);
+      acc.total_billed += Number(row.total_billed || 0);
+      return acc;
+    }, { invoice_count: 0, total_billed: 0 });
+    return { 
+      rows: rows.map(r => ({ 
+        ...r, 
+        invoice_count: Number(r.invoice_count),
+        total_billed: Number(r.total_billed) 
       })), 
       totals 
     };

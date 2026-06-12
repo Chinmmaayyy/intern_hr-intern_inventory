@@ -23,8 +23,20 @@ import {
   billingPayerAgreementExpiryReport,
   billingDepositRefundReport,
   billingPendingBillsReport,
-  billingPaymentServiceTypeReport
+  billingPaymentServiceTypeReport,
+  billingPaymentSummaryReport,
+  billingRevenueSummaryReport,
+  billingCancelBillReport,
+  billingServiceTypeSummaryReport
 } from './registry/billing';
+import {
+  revenueDepartmentWiseReport,
+  revenuePayerTypeWiseReport,
+  revenuePayerNameWiseReport,
+  revenueServiceTypeWiseReport,
+  revenueBillingCategoryWiseReport,
+  revenueWardWiseReport
+} from './registry/revenue';
 import { ValidatedFilters } from './types';
 
 // Add all reports to this registry map
@@ -50,6 +62,16 @@ export const REGISTRY: Record<string, any> = {
   [billingDepositRefundReport.id]: billingDepositRefundReport,
   [billingPendingBillsReport.id]: billingPendingBillsReport,
   [billingPaymentServiceTypeReport.id]: billingPaymentServiceTypeReport,
+  [billingPaymentSummaryReport.id]: billingPaymentSummaryReport,
+  [billingRevenueSummaryReport.id]: billingRevenueSummaryReport,
+  [billingCancelBillReport.id]: billingCancelBillReport,
+  [billingServiceTypeSummaryReport.id]: billingServiceTypeSummaryReport,
+  [revenueDepartmentWiseReport.id]: revenueDepartmentWiseReport,
+  [revenuePayerTypeWiseReport.id]: revenuePayerTypeWiseReport,
+  [revenuePayerNameWiseReport.id]: revenuePayerNameWiseReport,
+  [revenueServiceTypeWiseReport.id]: revenueServiceTypeWiseReport,
+  [revenueBillingCategoryWiseReport.id]: revenueBillingCategoryWiseReport,
+  [revenueWardWiseReport.id]: revenueWardWiseReport,
 };
 
 export async function runReport(

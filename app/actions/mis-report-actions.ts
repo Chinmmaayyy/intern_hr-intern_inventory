@@ -25,8 +25,20 @@ import {
   billingPayerAgreementExpiryReport,
   billingDepositRefundReport,
   billingPendingBillsReport,
-  billingPaymentServiceTypeReport
+  billingPaymentServiceTypeReport,
+  billingPaymentSummaryReport,
+  billingRevenueSummaryReport,
+  billingCancelBillReport,
+  billingServiceTypeSummaryReport
 } from '@/lib/mis/registry/billing';
+import {
+  revenueDepartmentWiseReport,
+  revenuePayerTypeWiseReport,
+  revenuePayerNameWiseReport,
+  revenueServiceTypeWiseReport,
+  revenueBillingCategoryWiseReport,
+  revenueWardWiseReport
+} from '@/lib/mis/registry/revenue';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
 
@@ -38,7 +50,7 @@ async function getSession() {
   return {
     orgId: user.organizationId,
     userId: user.id,
-    permissions: ['mis_reports.billing.view'],
+    permissions: ['mis_reports.billing.view', 'mis_reports.revenue.view'],
   };
 }
 
@@ -67,7 +79,17 @@ export async function listCatalogue() {
     billingPayerAgreementExpiryReport,
     billingDepositRefundReport,
     billingPendingBillsReport,
-    billingPaymentServiceTypeReport
+    billingPaymentServiceTypeReport,
+    billingPaymentSummaryReport,
+    billingRevenueSummaryReport,
+    billingCancelBillReport,
+    billingServiceTypeSummaryReport,
+    revenueDepartmentWiseReport,
+    revenuePayerTypeWiseReport,
+    revenuePayerNameWiseReport,
+    revenueServiceTypeWiseReport,
+    revenueBillingCategoryWiseReport,
+    revenueWardWiseReport
   ];
   
   const accessibleReports = allReports.filter(r => 

@@ -12,6 +12,7 @@ export enum ReportCategory {
   Ambulance = 'Ambulance',
   Optical = 'Optical',
   Revenue = 'Revenue',
+  Daily_Revenue = 'Daily Revenue',
 }
 
 export interface ColumnSpec {
