@@ -228,6 +228,12 @@ model Organization {
   pharmacy_purchase_invoices   PharmacyPurchaseInvoice[]
   dispense_allocations         DispenseAllocation[]
 
+  // MIS Reports
+  report_jobs                  ReportJob[]
+  report_presets               ReportPreset[]
+  report_schedules             ReportSchedule[]
+  report_access_logs           ReportAccessLog[]
+
   @@map("organizations")
 }
 
@@ -486,6 +492,12 @@ model User {
   organization      Organization      @relation(fields: [organizationId], references: [id])
   appointment_slots AppointmentSlot[]
   employee_profile  Employee?         // reverse link to HR Employee record
+
+  // MIS Reports
+  requested_reports ReportJob[]       @relation("ReportJobRequestedBy")
+  report_presets    ReportPreset[]
+  report_schedules  ReportSchedule[]  @relation("ReportScheduleOwner")
+  report_access_logs ReportAccessLog[]
 
   @@index([organizationId])
   @@index([doctor_group_id])
@@ -4731,4 +4743,94 @@ model DispenseAllocation {
   @@index([order_item_id])
   @@index([batch_id])
   @@map("dispense_allocations")
+}
+
+// ========================================
+// MODULE — MIS Reports
+// ========================================
+
+model ReportJob {
+  id             String    @id @default(uuid())
+  job_number     Int       @default(autoincrement())
+  report_id      String
+  requested_by   String
+  filters_json   Json
+  status         String    @default("Queued") // Queued, Running, Completed, Failed, Cancelled
+  progress       Int       @default(0)
+  row_count      Int?
+  file_key       String?
+  format         String
+  error          String?
+  started_at     DateTime?
+  finished_at    DateTime?
+  expires_at     DateTime?
+  organizationId String
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation("ReportJobRequestedBy", fields: [requested_by], references: [id])
+
+  @@index([organizationId])
+  @@index([requested_by])
+  @@map("report_jobs")
+}
+
+model ReportPreset {
+  id             String   @id @default(uuid())
+  report_id      String
+  user_id        String
+  name           String
+  filters_json   Json
+  is_shared      Boolean  @default(false)
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [user_id], references: [id])
+  schedules    ReportSchedule[]
+
+  @@index([organizationId])
+  @@index([user_id])
+  @@map("report_presets")
+}
+
+model ReportSchedule {
+  id             String    @id @default(uuid())
+  report_id      String
+  preset_id      String
+  cron_spec      String
+  format         String
+  recipients_json Json
+  channel        String    // EMAIL, WHATSAPP, BOTH
+  is_active      Boolean   @default(true)
+  last_run_at    DateTime?
+  last_status    String?
+  owner_user_id  String
+  organizationId String
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  preset       ReportPreset @relation(fields: [preset_id], references: [id])
+  owner_user   User         @relation("ReportScheduleOwner", fields: [owner_user_id], references: [id])
+
+  @@index([organizationId])
+  @@map("report_schedules")
+}
+
+model ReportAccessLog {
+  id             String   @id @default(uuid())
+  user_id        String
+  report_id      String
+  filters_json   Json
+  row_count      Int?
+  format         String?
+  action         String   // MIS_GENERATE, MIS_EXPORT, MIS_SCHEDULE
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [user_id], references: [id])
+
+  @@index([organizationId])
+  @@map("report_access_logs")
 }
