@@ -15,11 +15,12 @@
  *     re-derived from the filtered rows so the tfoot stays accurate.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { RevenueTable, type RevenuePayload, type RevenueRow } from '@/components/mis/RevenueTable';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, Download, Loader2 } from 'lucide-react';
+import { exportReportToExcel } from '@/app/actions/mis-report-actions';
 
 interface DailyRevenueShellProps {
     /** Full payload from generateReport('billing-revenue-daily', filters). */
@@ -28,6 +29,7 @@ interface DailyRevenueShellProps {
 
 export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
     const searchParams = useSearchParams();
+    const [isExporting, setIsExporting] = useState(false);
 
     const startDate = searchParams.get('startDate') ?? '';
     const endDate   = searchParams.get('endDate')   ?? '';
@@ -71,6 +73,40 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
         ...payload,
         rows:   filteredRows,
         totals: derivedTotals,
+    };
+
+    // ── Export Handler ────────────────────────────────────────────────────────
+    const handleExport = async () => {
+        setIsExporting(true);
+        try {
+            // Note: The backend schema expects ISO strings or Dates
+            // We provide fallbacks matching the server-side defaults
+            const filters = {
+                date_start: startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+                date_end: endDate || new Date().toISOString()
+            };
+            
+            const result = await exportReportToExcel('billing-revenue-daily', filters);
+            
+            const binaryString = window.atob(result.base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = result.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (error) {
+            console.error('Export failed', error);
+            alert('Export failed: ' + (error as Error).message);
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     // ── KPI aggregates ────────────────────────────────────────────────────
@@ -126,9 +162,19 @@ export function DailyRevenueShell({ payload }: DailyRevenueShellProps) {
                         <BarChart3 className="h-4 w-4 text-emerald-600" />
                         <span className="text-sm font-bold text-stone-900">Revenue Transactions</span>
                     </div>
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
-                        {filteredRows.length} row{filteredRows.length !== 1 ? 's' : ''}
-                    </span>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={handleExport} 
+                            disabled={isExporting || filteredRows.length === 0}
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 hover:border-emerald-300 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isExporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                            {isExporting ? 'Exporting...' : 'Export Excel'}
+                        </button>
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
+                            {filteredRows.length} row{filteredRows.length !== 1 ? 's' : ''}
+                        </span>
+                    </div>
                 </div>
 
                 <RevenueTable payload={filteredPayload} />
