@@ -144,9 +144,24 @@ export async function getEmployeeDetail(id: number) {
         const employee = await db.employee.findUnique({
             where: { id },
             include: {
-                attendances: { orderBy: { date: 'desc' }, take: 30 },
-                leave_requests: { orderBy: { created_at: 'desc' }, take: 10, include: { leave_type: true } },
-                shift_assignments: { orderBy: { date: 'desc' }, take: 14, include: { shift_pattern: true } },
+                attendances: {
+                    orderBy: { date: 'desc' },
+                    take: 30,
+                },
+
+                leave_requests: {
+                    orderBy: { created_at: 'desc' },
+                    take: 10,
+                    include: { leave_type: true },
+                },
+
+                shift_assignments: {
+                    orderBy: { date: 'desc' },
+                    take: 14,
+                    include: { shift_pattern: true },
+                },
+
+                documents: true,
             },
         });
 
@@ -167,6 +182,22 @@ export async function createEmployee(data: {
     phone?: string;
     email?: string;
     userId?: string;
+
+    //Employee Master Upgrade
+    employmentType?: string;
+    branchId?: string;
+    gradeBand?: string;
+    workLocation?: string;
+    bloodGroup?: string;
+    emergencyContact?: string;
+
+    panNumber?: string;
+    aadhaarMasked?: string;
+    uanNumber?: string;
+    pfNumber?: string;
+    esicNumber?: string;
+
+    paymentMode?: string;
 }) {
     try {
         const { db } = await requireTenantContext();
@@ -186,6 +217,22 @@ export async function createEmployee(data: {
                 phone: data.phone,
                 email: data.email,
                 user_id: data.userId,
+
+                // Employee Master Upgrade
+                employment_type: data.employmentType,
+                branch_id: data.branchId,
+                grade_band: data.gradeBand,
+                work_location: data.workLocation,
+                blood_group: data.bloodGroup,
+                emergency_contact: data.emergencyContact,
+
+                pan_number: data.panNumber,
+                aadhaar_masked: data.aadhaarMasked,
+                uan_number: data.uanNumber,
+                pf_number: data.pfNumber,
+                esic_number: data.esicNumber,
+
+                payment_mode: data.paymentMode as any,
             },
         });
 
@@ -227,6 +274,44 @@ export async function updateEmployee(id: number, data: {
     } catch (error) {
         console.error('Update Employee Error:', error);
         return { success: false, error: 'Failed to update employee' };
+    }
+}
+
+export async function createEmployeeDocument(data: {
+    employeeId: number;
+    documentType: string;
+    documentNumber?: string;
+    issuingAuthority?: string;
+    validFrom?: string;
+    validTo?: string;
+    fileUrl?: string;
+}) {
+    try {
+        const { db } = await requireTenantContext();
+
+        await db.employeeDocument.create({
+            data: {
+                employeeId: data.employeeId,
+                documentType: data.documentType,
+                documentNumber: data.documentNumber,
+                issuingAuthority: data.issuingAuthority,
+                validFrom: data.validFrom
+                    ? new Date(data.validFrom)
+                    : undefined,
+                validTo: data.validTo
+                    ? new Date(data.validTo)
+                    : undefined,
+                fileUrl: data.fileUrl,
+            },
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error("Create Employee Document Error:", error);
+        return {
+            success: false,
+            error: "Failed to create document",
+        };
     }
 }
 
