@@ -1,9 +1,7 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Script from "next/script";
-import { ToastProvider } from "@/app/components/ui/Toast";
-import { ThemeProvider } from "next-themes";
 import { DM_Sans, Playfair_Display } from "next/font/google";
-import { Toaster } from "react-hot-toast";
+import { ClientProviders } from "@/app/client-providers";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -21,10 +19,12 @@ const playfairDisplay = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Axten Hospitals — Intelligence Platform",
+  title: "Axten Hospitals â€” Intelligence Platform",
   description: "Next-generation Hospital Operating Intelligence System with AI-powered triage, real-time analytics, and comprehensive patient management.",
   keywords: "hospital management, AI triage, patient management, healthcare analytics, HIPAA compliant",
 };
+
+export const dynamic = 'force-dynamic';
 
 export default function RootLayout({
   children,
@@ -34,12 +34,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${dmSans.variable} ${playfairDisplay.variable}`}>
       <body className="font-sans antialiased">
-        <ThemeProvider attribute="class" defaultTheme="light" forcedTheme="light" disableTransitionOnChange>
-          <ToastProvider>
+        <ClientProviders>
             {children}
-            <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
-          </ToastProvider>
-        </ThemeProvider>
+        </ClientProviders>
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
           strategy="lazyOnload"
@@ -48,3 +45,4 @@ export default function RootLayout({
     </html>
   );
 }
+

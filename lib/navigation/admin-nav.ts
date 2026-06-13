@@ -4,7 +4,9 @@ import {
     Users, UserCog, Building2, ShieldCheck, UserRound,
     Settings, Palette, FileText, Bell, Plug, Clock, BarChart3, Lock,
     Workflow, Scissors, GitBranch, DatabaseBackup, BookOpen, Database,
-    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList,
+    ShieldAlert, Scale, Siren, SlidersHorizontal,
+    Package, ArrowLeftRight, ClipboardList, ClipboardCheck, ListOrdered,
+    ShoppingCart, Landmark, PieChart,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -30,13 +32,6 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
         ],
     },
     {
-        title: 'Reports & MIS',
-        collapsible: true,
-        items: [
-            { label: 'Daily Revenue', href: '/admin/mis/revenue/daily', icon: LayoutList },
-        ],
-    },
-    {
         title: 'Modules',
         collapsible: true,
         items: [
@@ -55,6 +50,23 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
             { label: 'HR', href: '/admin/hr', icon: Briefcase },
             { label: 'Operation Theatre', href: '/admin/ot/dashboard', icon: Scissors },
             { label: 'Emergency Room', href: '/admin/er/dashboard', icon: Siren },
+            { label: 'Inventory', href: '/admin/inventory', icon: Package, permissions: ['inventory.view'] },
+        ],
+    },
+    {
+        title: 'Reports & MIS',
+        collapsible: true,
+        items: [
+            { label: 'Daily Revenue', href: '/admin/mis/revenue/daily', icon: BarChart3 },
+            { label: 'MIS Reports', href: '/admin/mis-reports', icon: LineChart },
+        ],
+    },
+    {
+        title: 'Roster & Shifts',
+        collapsible: true,
+        items: [
+            { label: 'Roster Planner', href: '/admin/hr/roster', icon: Clock },
+            { label: 'Shift Swaps', href: '/admin/hr/swaps', icon: ArrowLeftRight },
         ],
     },
     {

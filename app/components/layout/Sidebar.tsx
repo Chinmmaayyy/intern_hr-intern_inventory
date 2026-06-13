@@ -108,6 +108,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
     {
       title: "Modules",
       items: [
+        { label: "Inventory", href: "/inventory/dashboard", icon: Package },
         { label: "OPD", href: "/admin/opd", icon: Stethoscope },
         { label: "IPD", href: "/admin/ipd", icon: Bed },
         { label: "Lab", href: "/admin/lab", icon: FlaskConical },
@@ -118,6 +119,24 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "Approval Center", href: "/billing/approvals", icon: ShieldAlert },
         { label: "Write-offs", href: "/billing/writeoffs", icon: Scale },
         { label: "HR", href: "/admin/hr", icon: Briefcase },
+      ],
+    },
+    {
+      title: "Inventory Module",
+      items: [
+        { label: "Dashboard", href: "/inventory/dashboard", icon: LayoutDashboard },
+        { label: "Item Catalog", href: "/inventory/items", icon: ClipboardList },
+        { label: "Store Locations", href: "/inventory/stores", icon: Landmark },
+        { label: "Indents & Issues", href: "/inventory/indents", icon: ListOrdered },
+        { label: "Stock Transfers", href: "/inventory/transfers", icon: ArrowLeftRight },
+        { label: "Physical Counts", href: "/inventory/counts", icon: ClipboardCheck },
+        { label: "Quarantine & Adjust", href: "/inventory/adjustments", icon: ShieldAlert },
+        { label: "Requisitions", href: "/inventory/requisitions", icon: ListOrdered },
+        { label: "Purchase Orders", href: "/inventory/procurement", icon: ShoppingCart },
+        { label: "Goods Receipt (GRN)", href: "/inventory/procurement/grn", icon: Package },
+        { label: "Purchase Invoices", href: "/inventory/procurement/invoices", icon: FileText },
+        { label: "Stock Reports", href: "/inventory/reports", icon: BarChart3 },
+        { label: "ABC/VED Analytics", href: "/inventory/reports/abc-ved", icon: PieChart },
       ],
     },
     {
@@ -190,6 +209,12 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "Surgery Requests", href: "/ot/requests", icon: Scissors },
         { label: "OT Worklist", href: "/ot/worklist", icon: ClipboardCheck },
         { label: "Emergency Room", href: "/er/dashboard", icon: Siren },
+      ],
+    },
+    {
+      title: "Management",
+      items: [
+        { label: "Shift Swap", href: "/doctor/shift-swap", icon: ArrowLeftRight },
       ],
     },
   ],
@@ -318,6 +343,50 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "Bank Recon", href: "/finance/bank-recon", icon: ArrowLeftRight },
         { label: "Collections", href: "/finance/collections", icon: Bell },
         { label: "Settings", href: "/finance/settings", icon: Settings },
+      ],
+    },
+  ],
+  store_manager: [
+    {
+      title: "Store Management",
+      items: [
+        { label: "Dashboard", href: "/inventory/dashboard", icon: LayoutDashboard },
+        { label: "Item Catalog", href: "/inventory/items", icon: ClipboardList },
+        { label: "Store Hierarchy", href: "/inventory/stores", icon: Landmark },
+      ],
+    },
+    {
+      title: "Stock Operations",
+      items: [
+        { label: "Indents & Issues", href: "/inventory/indents", icon: ListOrdered },
+        { label: "Stock Transfers", href: "/inventory/transfers", icon: ArrowLeftRight },
+        { label: "Physical Counts", href: "/inventory/counts", icon: ClipboardCheck },
+        { label: "Quarantine & Adjust", href: "/inventory/adjustments", icon: ShieldAlert },
+      ],
+    },
+    {
+      title: "Reports",
+      items: [
+        { label: "Stock Reports", href: "/inventory/reports", icon: BarChart3 },
+      ],
+    },
+  ],
+  procurement_officer: [
+    {
+      title: "Procurement",
+      items: [
+        { label: "Requisitions", href: "/inventory/procurement/requisitions", icon: ListOrdered },
+        { label: "Purchase Orders", href: "/inventory/procurement/purchase-orders", icon: ShoppingCart },
+        { label: "Goods Receipt (GRN)", href: "/inventory/procurement/grn", icon: Package },
+        { label: "Purchase Invoices", href: "/inventory/procurement/invoices", icon: FileText },
+        { label: "Vendor Management", href: "/finance/vendors", icon: Truck },
+      ],
+    },
+    {
+      title: "Analytics",
+      items: [
+        { label: "ABC/VED Analytics", href: "/inventory/reports/abc-ved", icon: PieChart },
+        { label: "Procurement Reports", href: "/inventory/reports", icon: BarChart3 },
       ],
     },
   ],
@@ -569,6 +638,8 @@ const roleLabelMap: Record<string, string> = {
   ot_manager: "OT Manager",
   er_staff: "ER Staff",
   crm_manager: "CRM Manager",
+  store_manager: "Store Manager",
+  procurement_officer: "Procurement Officer",
 };
 
 export function Sidebar({ session }: SidebarProps) {

@@ -424,6 +424,48 @@ export async function createEmployeeDocument(data: {
     }
 }
 
+
+export async function getDoctorsWithoutEmployee() {
+    try {
+        const { db, organizationId } = await requireTenantContext();
+
+        const doctors = await db.user.findMany({
+            where: {
+                organizationId,
+                role: 'doctor',
+            },
+        });
+
+        const employees = await db.employee.findMany({
+            select: {
+                user_id: true,
+            },
+        });
+
+        const employeeUserIds = new Set(
+            employees
+                .map((e: any) => e.user_id)
+                .filter(Boolean)
+        );
+
+        const missingDoctors = doctors.filter(
+            (doctor: any) => !employeeUserIds.has(doctor.id)
+        );
+
+        return {
+            success: true,
+            data: missingDoctors,
+        };
+    } catch (error) {
+        console.error(error);
+
+        return {
+            success: false,
+            data: [],
+        };
+    }
+}
+
 // ========================================
 // ATTENDANCE
 // ========================================
@@ -436,7 +478,7 @@ export async function recordAttendance(data: {
     status: string;
 }) {
     try {
-        const { db } = await requireTenantContext();
+        const { db, organizationId } = await requireTenantContext();
 
         const dateObj = new Date(data.date);
         dateObj.setHours(0, 0, 0, 0);
@@ -482,6 +524,65 @@ export async function recordAttendance(data: {
                     total_hours: totalHours,
                     status: data.status,
                 },
+            });
+        }
+
+        // ==========================================
+        // AUTO-SHIFT ASSIGNMENT BASED ON CLOCK IN
+        // ==========================================
+        if (data.checkIn) {
+            const checkInHour = parseInt(data.checkIn.split(':')[0], 10);
+            let shiftCat = 'DAY';
+            let shiftName = 'Auto Day Shift';
+            let startTime = '06:00';
+            let endTime = '17:00';
+
+            // 5 PM (17:00) to 6 AM (05:59) is Night Shift
+            if (checkInHour >= 17 || checkInHour < 6) {
+                shiftCat = 'NIGHT';
+                shiftName = 'Auto Night Shift';
+                startTime = '17:00';
+                endTime = '06:00';
+            }
+
+            // Find or create the corresponding shift pattern
+            let pattern = await db.shiftPattern.findFirst({
+                where: { name: shiftName, organizationId }
+            });
+            
+            if (!pattern) {
+                pattern = await db.shiftPattern.create({
+                    data: {
+                        name: shiftName,
+                        start_time: startTime,
+                        end_time: endTime,
+                        shift_category: shiftCat,
+                        is_overnight: shiftCat === 'NIGHT',
+                        organizationId
+                    }
+                });
+            }
+
+            // Upsert the shift assignment
+            await db.shiftAssignment.upsert({
+                where: {
+                    employee_id_date_organizationId: {
+                        employee_id: data.employeeId,
+                        date: dateObj,
+                        organizationId
+                    }
+                },
+                update: {
+                    shift_pattern_id: pattern.id,
+                    status: 'ATTENDED' 
+                },
+                create: {
+                    employee_id: data.employeeId,
+                    shift_pattern_id: pattern.id,
+                    date: dateObj,
+                    status: 'ATTENDED',
+                    organizationId
+                }
             });
         }
 

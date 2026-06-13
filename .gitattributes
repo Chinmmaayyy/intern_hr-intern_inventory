@@ -1,0 +1,35 @@
+# Normalize line endings: let Git handle text automatically.
+# Stops the "LF will be replaced by CRLF" warnings on Windows.
+* text=auto
+
+# Force LF for code/config so checkouts are consistent across OSes.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.jsx  text eol=lf
+*.json text eol=lf
+*.css  text eol=lf
+*.scss text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.prisma text eol=lf
+*.sql  text eol=lf
+*.sh   text eol=lf
+
+# Treat these as binary so Git never tries CRLF conversion on them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.doc  binary
+*.docx binary
+*.xls  binary
+*.xlsx binary
+*.ppt  binary
+*.pptx binary
+*.zip  binary
+*.db   binary

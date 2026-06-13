@@ -107,6 +107,7 @@ export default function EmployeeDetailPage() {
 
     const handleSave = async () => {
         setSaving(true);
+
         try {
             const res = await updateEmployee(employeeId, {
                 name: editForm.name,
@@ -114,7 +115,21 @@ export default function EmployeeDetailPage() {
                 salaryBasic: editForm.salaryBasic,
                 phone: editForm.phone || undefined,
                 email: editForm.email || undefined,
+
+                employmentType: editForm.employmentType || undefined,
+                workLocation: editForm.workLocation || undefined,
+                bloodGroup: editForm.bloodGroup || undefined,
+                emergencyContact: editForm.emergencyContact || undefined,
+
+                panNumber: editForm.panNumber || undefined,
+                aadhaarMasked: editForm.aadhaarMasked || undefined,
+                uanNumber: editForm.uanNumber || undefined,
+                pfNumber: editForm.pfNumber || undefined,
+                esicNumber: editForm.esicNumber || undefined,
+
+                paymentMode: editForm.paymentMode || undefined,
             });
+
             if (res.success) {
                 setEditing(false);
                 loadData();
@@ -122,6 +137,7 @@ export default function EmployeeDetailPage() {
         } catch {
             // error handled silently
         }
+
         setSaving(false);
     };
 
@@ -158,6 +174,12 @@ export default function EmployeeDetailPage() {
             </AppShell>
         );
     }
+
+    const hasExpiredDocuments =
+    employee?.documents?.some((doc: any) => {
+        if (!doc.validTo) return false;
+        return new Date(doc.validTo) < new Date();
+    }) || false;
 
     if (error || !employee) {
         return (
@@ -201,6 +223,17 @@ export default function EmployeeDetailPage() {
                 </Link>
             }
         >
+            {hasExpiredDocuments && (
+                <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-4">
+                    <h3 className="font-bold text-red-700">
+                        ⚠ Expired Registration Alert
+                    </h3>
+
+                    <p className="text-sm text-red-600 mt-1">
+                        This employee has one or more expired documents.
+                    </p>
+                </div>
+            )}
             {/* Header Card */}
             <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-6 mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -320,30 +353,55 @@ export default function EmployeeDetailPage() {
                                 </div>
 
                                 <div>
-                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
                                         Work Location
-                                    </p>
-                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
-                                        {employee.work_location || '-'}
-                                    </p>
+                                    </label>
+
+                                    <input
+                                        type="text"
+                                        value={editForm.workLocation}
+                                        onChange={(e) =>
+                                            setEditForm({
+                                                ...editForm,
+                                                workLocation: e.target.value,
+                                            })
+                                        }
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    />
                                 </div>
 
                                 <div>
-                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
                                         Blood Group
-                                    </p>
-                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
-                                        {employee.blood_group || '-'}
-                                    </p>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={editForm.bloodGroup}
+                                        onChange={(e) =>
+                                            setEditForm({
+                                                ...editForm,
+                                                bloodGroup: e.target.value,
+                                            })
+                                        }
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    />
                                 </div>
 
                                 <div>
-                                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                    <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">
                                         Emergency Contact
-                                    </p>
-                                    <p className="text-sm font-bold text-gray-900 mt-0.5">
-                                        {employee.emergency_contact || '-'}
-                                    </p>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={editForm.emergencyContact}
+                                        onChange={(e) =>
+                                            setEditForm({
+                                                ...editForm,
+                                                emergencyContact: e.target.value,
+                                            })
+                                        }
+                                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm"
+                                    />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide block mb-1">Phone</label>

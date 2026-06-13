@@ -7,10 +7,29 @@ import { useBranding } from './ThemeProvider';
 import { logout } from '@/app/login/actions';
 import { Building2, LogOut, ChevronLeft, ChevronRight, Menu, X, ChevronDown, KeyRound } from 'lucide-react';
 import PortalSwitcher from './PortalSwitcher';
-import { ADMIN_NAV_SECTIONS } from '@/lib/navigation/admin-nav';
+import { ADMIN_NAV_SECTIONS, type NavItem } from '@/lib/navigation/admin-nav';
 import { ChangePasswordModal } from '@/app/components/ChangePasswordModal';
 
-export default function AdminSidebar() {
+/** Client-side role → permission map (mirrors SYSTEM_ROLE_PERMISSIONS in session.ts for nav filtering) */
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+    admin: ['inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete', 'inventory.approve', 'inventory.export', 'inventory.config'],
+    finance: ['inventory.view', 'inventory.approve', 'inventory.export'],
+    pharmacist: ['inventory.view', 'inventory.create', 'inventory.edit'],
+    lab_technician: ['inventory.view', 'inventory.create'],
+    ipd_manager: ['inventory.view', 'inventory.create'],
+    doctor: ['inventory.view', 'inventory.create'],
+    receptionist: ['inventory.view', 'inventory.create'],
+};
+
+function hasNavPermission(item: NavItem, role?: string): boolean {
+    if (!item.permissions || item.permissions.length === 0) return true;
+    if (!role) return false;
+    if (role === 'admin') return true;
+    const rolePerms = ROLE_PERMISSIONS[role] || [];
+    return item.permissions.some(p => rolePerms.includes(p));
+}
+
+export default function AdminSidebar({ userRole }: { userRole?: string }) {
     const pathname = usePathname();
     const branding = useBranding();
     const [collapsed, setCollapsed] = useState(false);
@@ -121,7 +140,7 @@ export default function AdminSidebar() {
                             )}
                             {!isSectionCollapsed && (
                                 <div className="space-y-0.5">
-                                    {section.items.map((item) => {
+                                    {section.items.filter((item) => hasNavPermission(item, userRole)).map((item) => {
                                         const Icon = item.icon;
                                         const active = isActive(item.href);
                                         return (

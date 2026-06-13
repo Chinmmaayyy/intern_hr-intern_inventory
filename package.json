@@ -7,11 +7,11 @@
   },
   "scripts": {
     "predev": "node scripts/check-deps-sync.js && prisma generate",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "dev:fresh": "npm run clean && npm install && npm run dev",
     "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "setup": "npm install && prisma generate && npm run clean",
-    "build": "prisma generate && next build --webpack",
+    "build": "prisma generate && cross-env NODE_ENV=production next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "lint:ci": "eslint --max-warnings=0 app/lib/env.ts app/lib/route-auth.ts app/lib/password-setup.ts app/lib/login-rate-limit.ts app/patient/setup-password",
@@ -20,12 +20,14 @@
     "check:deps": "node scripts/check-deps-sync.js",
     "db:migrate:prod": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:baseline": "node scripts/baseline-migrations.js",
     "db:status": "prisma migrate status",
     "db:backup": "mkdir -p backups && pg_dump \"$DIRECT_URL\" --format=custom --no-owner --no-acl --file \"backups/hospitalos-$(date +%Y%m%d-%H%M%S).dump\"",
     "postinstall": "prisma generate"
   },
   "prisma": {
-    "seed": "npx ts-node prisma/seed.ts"
+    "seed": "npx ts-node --project prisma/tsconfig.seed.json prisma/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
@@ -43,7 +45,7 @@
     "exceljs": "^4.4.0",
     "jose": "^6.2.3",
     "lucide-react": "^0.563.0",
-    "next": "16.1.6",
+    "next": "^16.2.9",
     "next-themes": "^0.4.6",
     "nodemailer": "^8.0.1",
     "openai": "^6.22.0",
@@ -69,8 +71,9 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/speakeasy": "^2.0.10",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "^16.2.9",
     "puppeteer": "^24.43.1",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",

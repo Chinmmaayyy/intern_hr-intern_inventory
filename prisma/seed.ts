@@ -101,6 +101,8 @@ async function main() {
         { username: 'pharm1', role: 'pharmacist', name: 'Priya Pharmacist', specialty: null, email: 'priya.pharm@avanihospital.com', phone: '+91 98000 40001' },
         { username: 'finance1', role: 'finance', name: 'Ankit Finance', specialty: null, email: 'ankit.finance@avanihospital.com', phone: '+91 98000 50001' },
         { username: 'ipd1', role: 'ipd_manager', name: 'Neha IPD Manager', specialty: null, email: 'neha.ipd@avanihospital.com', phone: '+91 98000 60001' },
+        { username: 'store1', role: 'store_manager', name: 'Rajesh Store Manager', specialty: null, email: 'rajesh.store@avanihospital.com', phone: '+91 98000 70001' },
+        { username: 'proc1', role: 'procurement_officer', name: 'Kavita Procurement', specialty: null, email: 'kavita.proc@avanihospital.com', phone: '+91 98000 70002' },
     ];
 
     for (const u of users) {
@@ -138,13 +140,8 @@ async function main() {
 
     for (const t of tests) {
         await prisma.lab_test_inventory.upsert({
-            where: {
-                test_name_organizationId: {
-                    test_name: t.test_name,
-                    organizationId: DEFAULT_ORG_ID
-                }
-            },
-            update: { organizationId: DEFAULT_ORG_ID },
+            where: { test_name_organizationId: { test_name: t.test_name, organizationId: DEFAULT_ORG_ID } },
+            update: { price: t.price, is_available: t.is_available },
             create: { ...t, organizationId: DEFAULT_ORG_ID },
         });
     }
@@ -183,13 +180,8 @@ async function main() {
 
     for (const m of medicines) {
         const med = await prisma.pharmacy_medicine_master.upsert({
-            where: {
-                brand_name_organizationId: {
-                    brand_name: m.brand_name,
-                    organizationId: DEFAULT_ORG_ID
-                }
-            },
-            update: { organizationId: DEFAULT_ORG_ID },
+            where: { brand_name_organizationId: { brand_name: m.brand_name, organizationId: DEFAULT_ORG_ID } },
+            update: { generic_name: m.generic_name, price_per_unit: m.price_per_unit, min_threshold: m.min_threshold },
             create: { ...m, organizationId: DEFAULT_ORG_ID },
         });
 
@@ -495,6 +487,33 @@ async function main() {
     console.log('Wards: 6 wards with 48 beds total');
     console.log('Charge Catalog: ' + catalogItems.length + ' service rate items');
     console.log('Insurance: ' + insuranceProviders.length + ' TPA providers');
+
+    // =============================================
+    // 10. INVENTORY MODULE CONFIG + SEED DATA
+    // =============================================
+    await prisma.moduleConfig.upsert({
+        where: { organizationId_module_key: { organizationId: DEFAULT_ORG_ID, module_key: 'inventory' } },
+        update: { enabled: true },
+        create: {
+            organizationId: DEFAULT_ORG_ID,
+            module_key: 'inventory',
+            enabled: true,
+            config_json: {
+                po_approval_thresholds: { store_manager: 50000, admin: 500000 },
+                adjustment_tolerance_pct: 2,
+                emergency_issue_cap: 10000,
+                expiry_alert_days: [90, 60, 30],
+            },
+        },
+    });
+    console.log('Inventory module config enabled');
+
+    try {
+        const { execSync } = require('child_process');
+        execSync('node prisma/seed-inventory.js', { stdio: 'inherit', cwd: process.cwd() });
+    } catch (e: unknown) {
+        console.warn('Inventory seed skipped or partial:', e instanceof Error ? e.message : String(e));
+    }
 }
 
 main()

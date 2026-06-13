@@ -202,6 +202,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'insurance.view', 'insurance.create', 'insurance.edit', 'insurance.delete', 'insurance.approve', 'insurance.export',
         'hr.view', 'hr.create', 'hr.edit', 'hr.delete', 'hr.approve', 'hr.export',
         'admin.view', 'admin.create', 'admin.edit', 'admin.delete', 'admin.approve', 'admin.export',
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete', 'inventory.approve', 'inventory.export', 'inventory.config',
         'reports.view', 'reports.export',
     ],
     doctor: [
@@ -211,6 +212,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'pharmacy.view',
         'finance.view',
         'insurance.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     receptionist: [
@@ -218,19 +220,23 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'ipd.view', 'ipd.create', 'ipd.edit',
         'finance.view', 'finance.create',
         'insurance.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     lab_technician: [
         'lab.view', 'lab.create', 'lab.edit',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     pharmacist: [
         'pharmacy.view', 'pharmacy.create', 'pharmacy.edit',
+        'inventory.view', 'inventory.create', 'inventory.edit',
         'reports.view',
     ],
     finance: [
         'finance.view', 'finance.create', 'finance.edit', 'finance.approve', 'finance.export',
         'insurance.view', 'insurance.create', 'insurance.edit',
+        'inventory.view', 'inventory.approve', 'inventory.export',
         'reports.view', 'reports.export',
     ],
     ipd_manager: [
@@ -239,6 +245,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'lab.view',
         'pharmacy.view',
         'finance.view',
+        'inventory.view', 'inventory.create',
         'reports.view', 'reports.export',
     ],
     nurse: [
