@@ -31,16 +31,22 @@ export default function GoodsReceiptNotesPage() {
 
   const loadData = async () => {
     setLoading(true);
-    const [grnRes, poRes, storeRes] = await Promise.all([
+    const [grnRes, poOrderedRes, poApprovedRes, storeRes] = await Promise.all([
       listGRNs(),
       listPurchaseOrders({ status: 'Ordered' }),
+      listPurchaseOrders({ status: 'Approved' }),
       listStores()
     ]);
     if (grnRes.success) setGrns(grnRes.data?.grns || []);
-    if (poRes.success) setPurchaseOrders(poRes.data?.orders || []);
+    const allPOs = [
+      ...(poOrderedRes.data?.orders || []),
+      ...(poApprovedRes.data?.orders || []),
+    ];
+    setPurchaseOrders(allPOs);
     if (storeRes.success) setStores(storeRes.data || []);
     setLoading(false);
   };
+
 
   useEffect(() => {
     loadData();

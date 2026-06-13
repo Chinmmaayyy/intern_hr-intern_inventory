@@ -73,6 +73,24 @@ const grnSchema = z.object({
 });
 
 // ========================================
+// Vendors
+// ========================================
+
+export async function listVendors() {
+  try {
+    const { db, organizationId } = await requireInventoryContext(PROCUREMENT_PO_READ_ROLES);
+    const rows = await db.vendor.findMany({
+      where: { organizationId, is_active: true },
+      orderBy: { vendor_name: 'asc' },
+      select: { id: true, vendor_name: true, vendor_code: true, email: true, phone: true },
+    });
+    return { success: true, data: serialize(rows) };
+  } catch (e: any) {
+    return { success: false, error: e.message, data: [] };
+  }
+}
+
+// ========================================
 // Purchase Requisitions
 // ========================================
 
@@ -561,7 +579,7 @@ export async function sendPurchaseOrder(id: number) {
 
     await db.purchaseOrder.update({
       where: { id },
-      data: { ordered_at: po.ordered_at ?? new Date() },
+      data: { status: 'Ordered', ordered_at: po.ordered_at ?? new Date() },
     });
 
     await db.system_audit_logs.create({

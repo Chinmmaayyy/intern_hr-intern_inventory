@@ -1,4 +1,4 @@
-import { prisma } from 'd:/Intern-task/intern_hr-intern_inventory/backend/db';
+import { prisma } from '../backend/db';
 
 async function main() {
   const users = await prisma.user.findMany({
