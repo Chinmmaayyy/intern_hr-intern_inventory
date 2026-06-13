@@ -94,6 +94,10 @@ next-env.d.ts
 
 # temp files
 ~$*
+*.tmp
+*.temp
+.~lock.*#
+.~lock.*
 
 # local db
 prisma/dev.db
