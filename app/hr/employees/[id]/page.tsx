@@ -11,6 +11,10 @@ import { getEmployeeDetail, updateEmployee, getLeaveBalance } from '@/app/action
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
+import {
+    createEmployeeDocument,
+} from '@/app/actions/hr-actions';
+
 interface LeaveBalance {
     leaveType: string;
     total: number;
@@ -19,6 +23,15 @@ interface LeaveBalance {
 }
 
 export default function EmployeeDetailPage() {
+    const [showDocumentModal, setShowDocumentModal] = useState(false);
+    const [documentForm, setDocumentForm] = useState({
+        documentType: '',
+        documentNumber: '',
+        issuingAuthority: '',
+        validFrom: '',
+        validTo: '',
+        fileUrl: '',
+    });
     const params = useParams();
     const employeeId = Number(params.id);
 
@@ -159,6 +172,22 @@ export default function EmployeeDetailPage() {
             </AppShell>
         );
     }
+
+    const handleCreateDocument = async () => {
+        const res = await createEmployeeDocument({
+            employeeId: employee.id,
+            documentType: documentForm.documentType,
+            documentNumber: documentForm.documentNumber,
+            issuingAuthority: documentForm.issuingAuthority,
+            validFrom: documentForm.validFrom,
+            validTo: documentForm.validTo,
+            fileUrl: documentForm.fileUrl,
+        });
+
+        if (res.success) {
+            window.location.reload();
+        }
+    };
 
     return (
         <AppShell
@@ -471,6 +500,154 @@ export default function EmployeeDetailPage() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Employment Information */}
+                                    <div className="mt-8 border-t pt-6">
+                                        <h3 className="text-sm font-black text-gray-900 mb-4">
+                                            Employment Information
+                                        </h3>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Employment Type
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.employment_type || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Branch ID
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.branch_id || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Grade Band
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.grade_band || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Reporting Manager ID
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.reporting_manager_id || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Date Of Confirmation
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.date_of_confirmation
+                                                        ? new Date(employee.date_of_confirmation).toLocaleDateString()
+                                                        : '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Work Location
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.work_location || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Date Of Exit
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.date_of_exit
+                                                        ? new Date(employee.date_of_exit).toLocaleDateString()
+                                                        : '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Exit Reason
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.exit_reason || '-'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Personal Information */}
+                                    <div className="mt-8 border-t pt-6">
+                                        <h3 className="text-sm font-black text-gray-900 mb-4">
+                                            Personal Information
+                                        </h3>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Blood Group
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.blood_group || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Emergency Contact
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.emergency_contact || '-'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Banking Information */}
+                                    <div className="mt-8 border-t pt-6">
+                                        <h3 className="text-sm font-black text-gray-900 mb-4">
+                                            Banking Information
+                                        </h3>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Bank Account
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.bank_account_enc || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    IFSC
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.bank_ifsc_enc || '-'}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
+                                                    Bank Name
+                                                </p>
+                                                <p className="text-sm font-bold text-gray-900">
+                                                    {employee.bank_name_enc || '-'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -601,26 +778,202 @@ export default function EmployeeDetailPage() {
                                 Employee Documents
                             </h3>
 
-                            <button className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white text-sm font-bold">
+                            <button onClick={() => setShowDocumentModal(true)} className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 text-white text-sm font-bold">
                                 Upload Document
                             </button>
                         </div>
 
-                        <div className="border border-dashed border-gray-300 rounded-2xl p-10 text-center">
-                            <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
-                                <h4 className="font-semibold mb-2">Dummy Document</h4>
-                                <p>Type: Medical Registration</p>
-                                <p>Number: MCI-123456</p>
-                                <p>Authority: National Medical Commissions</p>
-                                <p>Valid Till: 31-Dec-2027</p>
-                            </div>
+                        <div className="space-y-4">
+                            {employee.documents?.length > 0 ? (
+                                employee.documents.map((doc: any) => (
+                                    <div
+                                        key={doc.id}
+                                        className="bg-white border rounded-xl p-4"
+                                    >
+                                        {(() => {
+                                            const expiryDate = doc.validTo
+                                                ? new Date(doc.validTo)
+                                                : null;
 
-                            <p className="text-sm text-gray-500 mt-2">
-                                Medical Registration, Nursing Council,
-                                Degree Certificates, Contracts and ID Proofs
-                                will appear here.
-                            </p>
+                                            const daysRemaining = expiryDate
+                                                ? Math.ceil(
+                                                    (expiryDate.getTime() - Date.now()) /
+                                                        (1000 * 60 * 60 * 24)
+                                                )
+                                                : null;
+
+                                            return (
+                                                <>
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <h4 className="font-semibold text-gray-900">
+                                                                {doc.documentType}
+                                                            </h4>
+
+                                                            <p className="text-sm text-gray-600">
+                                                                Number: {doc.documentNumber || '-'}
+                                                            </p>
+
+                                                            <p className="text-sm text-gray-600">
+                                                                Authority: {doc.issuingAuthority || '-'}
+                                                            </p>
+
+                                                            {daysRemaining !== null && (
+                                                                <div className="mt-2">
+                                                                    {daysRemaining < 0 ? (
+                                                                        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 font-semibold">
+                                                                            Expired
+                                                                        </span>
+                                                                    ) : daysRemaining <= 30 ? (
+                                                                        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 font-semibold">
+                                                                            Expires in {daysRemaining} days
+                                                                        </span>
+                                                                    ) : daysRemaining <= 60 ? (
+                                                                        <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 font-semibold">
+                                                                            Expires in {daysRemaining} days
+                                                                        </span>
+                                                                    ) : daysRemaining <= 90 ? (
+                                                                        <span className="px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-700 font-semibold">
+                                                                            Expires in {daysRemaining} days
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 font-semibold">
+                                                                            Valid
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="text-right">
+                                                            <p className="text-xs text-gray-500">
+                                                                Valid Till
+                                                            </p>
+
+                                                            <p className="font-medium">
+                                                                {doc.validTo
+                                                                    ? new Date(doc.validTo).toLocaleDateString()
+                                                                    : '-'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="border border-dashed border-gray-300 rounded-2xl p-10 text-center">
+                                    <FileText className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+
+                                    <p className="text-sm text-gray-500">
+                                        No documents uploaded yet.
+                                    </p>
+                                </div>
+                            )}
+
+                            {showDocumentModal && (
+                                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                                    <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+                                        <h2 className="text-xl font-bold mb-4">
+                                            Upload Employee Document
+                                        </h2>
+
+                                        <div className="space-y-3">
+
+                                            <input
+                                                placeholder="Document Type"
+                                                value={documentForm.documentType}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        documentType: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+
+                                            <input
+                                                placeholder="Document Number"
+                                                value={documentForm.documentNumber}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        documentNumber: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+
+                                            <input
+                                                placeholder="Issuing Authority"
+                                                value={documentForm.issuingAuthority}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        issuingAuthority: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+
+                                            <input
+                                                type="date"
+                                                value={documentForm.validFrom}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        validFrom: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+
+                                            <input
+                                                type="date"
+                                                value={documentForm.validTo}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        validTo: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+
+                                            <input
+                                                placeholder="File URL"
+                                                value={documentForm.fileUrl}
+                                                onChange={(e) =>
+                                                    setDocumentForm({
+                                                        ...documentForm,
+                                                        fileUrl: e.target.value,
+                                                    })
+                                                }
+                                                className="w-full border rounded-xl px-4 py-2"
+                                            />
+                                        </div>
+
+                                        <div className="flex justify-end gap-3 mt-5">
+                                            <button
+                                                onClick={() =>
+                                                    setShowDocumentModal(false)
+                                                }
+                                                className="px-4 py-2 border rounded-xl"
+                                            >
+                                                Cancel
+                                            </button>
+
+                                            <button
+                                                onClick={handleCreateDocument}
+                                                className="px-4 py-2 bg-green-600 text-white rounded-xl"
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
