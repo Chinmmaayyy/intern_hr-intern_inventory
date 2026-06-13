@@ -20,7 +20,7 @@ export default function AdminLayoutShell({ children, userName, userRole }: Admin
                 <div className="blob b3" />
                 <div className="grid-bg" />
 
-                <AdminSidebar />
+                <AdminSidebar userRole={userRole} />
                 <div className="flex flex-col flex-1 min-w-0 overflow-hidden relative z-10">
                     <Topbar userName={userName} userRole={userRole} />
                     <main className="flex-1 overflow-y-auto">

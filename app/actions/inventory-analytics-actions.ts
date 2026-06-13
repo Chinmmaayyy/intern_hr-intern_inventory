@@ -1,5 +1,11 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
+
+// Role groups for inventory analytics operations
+const ANALYTICS_ADMIN_ROLES = ['admin'];
+const ANALYTICS_REPORT_ROLES = ['admin', 'finance', 'pharmacist'];
+const ANALYTICS_DASHBOARD_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager'];
+const ANALYTICS_LOOKUP_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -12,7 +18,7 @@ function serialize<T>(d: T): T {
 
 export async function computeAbcVedMatrix() {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_ADMIN_ROLES);
     const twelveMthAgo = new Date();
     twelveMthAgo.setFullYear(twelveMthAgo.getFullYear() - 1);
 
@@ -64,7 +70,7 @@ export async function computeAbcVedMatrix() {
 
 export async function getSlowMovingStocks(days = 90) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_REPORT_ROLES);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
@@ -113,7 +119,7 @@ export async function getSlowMovingStocks(days = 90) {
 
 export async function getExpiryForecast(days = 90) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_REPORT_ROLES);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() + days);
 
@@ -153,7 +159,7 @@ export async function getExpiryForecast(days = 90) {
 
 export async function getInventoryDashboardSummary() {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_DASHBOARD_ROLES);
     const today = new Date();
     const in30Days = new Date(); in30Days.setDate(today.getDate() + 30);
     const in90Days = new Date(); in90Days.setDate(today.getDate() + 90);
@@ -217,7 +223,7 @@ export async function getInventoryDashboardSummary() {
 
 export async function lookupItemByBarcode(barcode: string) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_LOOKUP_ROLES);
     // Try item master barcode first
     const item = await db.itemMaster.findFirst({
       where: { organizationId, barcode },

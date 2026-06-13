@@ -1,7 +1,15 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+
+// Role groups for inventory procurement operations
+const PROCUREMENT_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const PROCUREMENT_REQUEST_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const PROCUREMENT_PO_READ_ROLES = ['admin', 'finance', 'pharmacist'];
+const PROCUREMENT_PO_WRITE_ROLES = ['admin'];
+const PROCUREMENT_GRN_WRITE_ROLES = ['admin', 'pharmacist'];
+const PROCUREMENT_FINANCE_ROLES = ['admin', 'finance'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -68,7 +76,7 @@ const grnSchema = z.object({
 
 export async function listRequisitions(opts?: { status?: string; store_id?: number; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(PROCUREMENT_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -94,7 +102,7 @@ export async function listRequisitions(opts?: { status?: string; store_id?: numb
 
 export async function createRequisition(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_REQUEST_ROLES);
     const data = prSchema.parse(input);
     const prNumber = `PR-${Date.now()}`;
     const pr = await db.purchaseRequisition.create({
@@ -120,8 +128,7 @@ export async function createRequisition(input: unknown) {
 
 export async function approveRequisition(id: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin','procurement_officer','store_manager'].includes(session.role)) return { success: false, error: 'Insufficient permissions' };
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_PO_WRITE_ROLES);
     const pr = await db.purchaseRequisition.update({
       where: { id } as any,
       data: { status: 'Approved', approved_by: session.id, approved_at: new Date() },
@@ -139,7 +146,7 @@ export async function approveRequisition(id: number) {
 
 export async function listPurchaseOrders(opts?: { status?: string; vendor_id?: number; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(PROCUREMENT_PO_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -166,7 +173,7 @@ export async function listPurchaseOrders(opts?: { status?: string; vendor_id?: n
 
 export async function createPurchaseOrder(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_PO_WRITE_ROLES);
     const data = poSchema.parse(input);
     const poNumber = `PO-${Date.now()}`;
     const totalAmount = data.items.reduce((s, i) => s + i.quantity_ordered * i.unit_price * (1 + i.gst_rate / 100), 0);
@@ -197,7 +204,7 @@ export async function createPurchaseOrder(input: unknown) {
 
 export async function getPurchaseOrderById(id: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(PROCUREMENT_PO_READ_ROLES);
     const po = await db.purchaseOrder.findFirst({
       where: { id, organizationId },
       include: {
@@ -219,7 +226,7 @@ export async function getPurchaseOrderById(id: number) {
 
 export async function createPurchaseOrderFromPR(prId: number, vendorId: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_PO_WRITE_ROLES);
     const pr = await db.purchaseRequisition.findUnique({
       where: { id: prId },
       include: { items: true },
@@ -271,7 +278,7 @@ export async function createPurchaseOrderFromPR(prId: number, vendorId: number) 
 
 export async function performThreeWayMatchAndInvoice(poId: number, grnNumber: string, invoiceNumber: string, invoiceDate: string) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_FINANCE_ROLES);
     const po = await db.purchaseOrder.findUnique({
       where: { id: poId },
       include: { items: true },
@@ -376,8 +383,7 @@ export async function performThreeWayMatchAndInvoice(poId: number, grnNumber: st
 
 export async function approvePurchaseOrder(id: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin','procurement_officer'].includes(session.role)) return { success: false, error: 'Insufficient permissions' };
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_PO_WRITE_ROLES);
     const po = await db.purchaseOrder.update({
       where: { id } as any,
       data: { status: 'Approved', approved_by: session.id, approved_at: new Date() },
@@ -395,7 +401,7 @@ export async function approvePurchaseOrder(id: number) {
 
 export async function listGRNs(opts?: { po_id?: number; store_id?: number; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(PROCUREMENT_PO_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -422,7 +428,7 @@ export async function listGRNs(opts?: { po_id?: number; store_id?: number; page?
 
 export async function createGRN(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(PROCUREMENT_GRN_WRITE_ROLES);
     const data = grnSchema.parse(input);
     const grnNumber = `GRN-${Date.now()}`;
     const totalAmount = data.items.reduce((s, i) => s + i.quantity_accepted * i.unit_price * (1 + i.gst_rate / 100), 0);

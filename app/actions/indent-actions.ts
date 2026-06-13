@@ -1,7 +1,13 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+
+// Role groups for inventory indent operations
+const INDENT_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const INDENT_CREATE_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const INDENT_APPROVE_ROLES = ['admin'];
+const INDENT_ISSUE_ROLES = ['admin', 'pharmacist'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -40,7 +46,7 @@ export async function listIndents(opts?: {
   limit?: number;
 }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INDENT_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -68,7 +74,7 @@ export async function listIndents(opts?: {
 
 export async function createIndent(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INDENT_CREATE_ROLES);
     const data = indentSchema.parse(input);
     const indentNumber = `IND-${Date.now()}`;
     const indent = await db.indent.create({
@@ -97,7 +103,7 @@ export async function createIndent(input: unknown) {
 
 export async function getIndentById(id: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INDENT_READ_ROLES);
     const indent = await db.indent.findFirst({
       where: { id, organizationId },
       include: {
@@ -119,8 +125,7 @@ export async function getIndentById(id: number) {
 
 export async function approveIndent(id: number, approvedItems: Array<{ item_id: number; qty_approved: number }>) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin','store_manager'].includes(session.role)) return { success: false, error: 'Insufficient permissions' };
+    const { db, organizationId, session } = await requireRoleAndTenant(INDENT_APPROVE_ROLES);
     await db.$transaction(async (tx: any) => {
       await tx.indent.update({
         where: { id } as any,
@@ -146,7 +151,7 @@ export async function approveIndent(id: number, approvedItems: Array<{ item_id: 
 
 export async function getFEFOSuggestion(store_id: number, item_id: number, quantity: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INDENT_ISSUE_ROLES);
     // Get batch-level stocks ordered by expiry (FEFO)
     const stocks = await db.storeStock.findMany({
       where: { store_id, item_id, organizationId, quantity_on_hand: { gt: 0 } },
@@ -179,7 +184,7 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
   quantity: number;
 }>) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INDENT_ISSUE_ROLES);
     const indent = await db.indent.findFirst({ where: { id: indent_id, organizationId }, include: { items: true } });
     if (!indent) return { success: false, error: 'Indent not found' };
     if (!['Approved','Partially Issued'].includes(indent.status)) return { success: false, error: 'Indent not approved for issuance' };

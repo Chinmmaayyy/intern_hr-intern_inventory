@@ -1,7 +1,12 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+
+// Role groups for inventory item master operations
+const INVENTORY_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const INVENTORY_ADMIN_ROLES = ['admin'];
+const INVENTORY_CATEGORY_ROLES = ['admin', 'finance'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -66,7 +71,7 @@ const itemVendorSchema = z.object({
 
 export async function listItemCategories(opts?: { search?: string }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) {
       where.name = { contains: opts.search, mode: 'insensitive' };
@@ -88,7 +93,7 @@ export async function listItemCategories(opts?: { search?: string }) {
 
 export async function createItemCategory(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_CATEGORY_ROLES);
     const data = itemCategorySchema.parse(input);
     const row = await db.itemCategory.create({
       data: { ...data, organizationId },
@@ -109,7 +114,7 @@ export async function createItemCategory(input: unknown) {
 
 export async function updateItemCategory(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_CATEGORY_ROLES);
     const data = itemCategorySchema.partial().parse(input);
     const row = await db.itemCategory.update({
       where: { id } as any,
@@ -143,7 +148,7 @@ export async function listItems(opts?: {
   limit?: number;
 }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 25;
     const where: any = { organizationId };
@@ -191,7 +196,7 @@ export async function listItems(opts?: {
 
 export async function getItemById(id: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const item = await db.itemMaster.findFirst({
       where: { id, organizationId },
       include: {
@@ -224,7 +229,7 @@ export async function getItemById(id: number) {
 
 export async function createItem(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = itemMasterSchema.parse(input);
     const existing = await db.itemMaster.findFirst({
       where: { item_code: data.item_code, organizationId },
@@ -249,7 +254,7 @@ export async function createItem(input: unknown) {
 
 export async function updateItem(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = itemMasterSchema.partial().parse(input);
     const row = await db.itemMaster.update({
       where: { id } as any,
@@ -271,10 +276,7 @@ export async function updateItem(id: number, input: unknown) {
 
 export async function approveItem(id: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin', 'procurement_officer'].includes(session.role)) {
-      return { success: false, error: 'Insufficient permissions' };
-    }
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const row = await db.itemMaster.update({
       where: { id } as any,
       data: { status: 'Active' },
@@ -295,10 +297,7 @@ export async function approveItem(id: number) {
 
 export async function discontinueItem(id: number, reason: string) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin', 'store_manager', 'procurement_officer'].includes(session.role)) {
-      return { success: false, error: 'Insufficient permissions' };
-    }
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const openIndents = await db.indentItem.count({
       where: {
         item_id: id,
@@ -330,7 +329,7 @@ export async function discontinueItem(id: number, reason: string) {
 
 export async function importItems(rows: Record<string, string>[], dryRun = true) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const results: Array<{ row: number; status: 'ok' | 'error'; message?: string }> = [];
     const toCreate: any[] = [];
 
@@ -408,7 +407,7 @@ export async function importItems(rows: Record<string, string>[], dryRun = true)
 
 export async function upsertItemVendor(input: unknown) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = itemVendorSchema.parse(input);
     const row = await db.itemVendor.upsert({
       where: { item_id_vendor_id: { item_id: data.item_id, vendor_id: data.vendor_id } },
@@ -428,7 +427,7 @@ export async function upsertItemVendor(input: unknown) {
 
 export async function removeItemVendor(item_id: number, vendor_id: number) {
   try {
-    const { db } = await requireTenantContext();
+    const { db } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     await db.itemVendor.delete({
       where: { item_id_vendor_id: { item_id, vendor_id } },
     });

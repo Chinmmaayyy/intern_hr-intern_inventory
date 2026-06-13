@@ -1,9 +1,15 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { postChargeToIpdBill } from '@/app/actions/ipd-finance-actions';
 import { postConsumptionToGL, postAdjustmentToGL } from '@/app/actions/inventory-gl-actions';
+
+// Role groups for inventory stock operations
+const STOCK_READ_ROLES = ['admin', 'finance', 'pharmacist'];
+const STOCK_WRITE_ROLES = ['admin', 'pharmacist'];
+const STOCK_APPROVE_ROLES = ['admin', 'finance'];
+const STOCK_CONSUMPTION_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -29,7 +35,7 @@ const transferSchema = z.object({
 
 export async function listTransfers(opts?: { status?: string; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -54,7 +60,7 @@ export async function listTransfers(opts?: { status?: string; page?: number; lim
 
 export async function createStoreTransfer(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
     const data = transferSchema.parse(input);
     const transferNumber = `TRF-${Date.now()}`;
 
@@ -141,7 +147,7 @@ export async function createStoreTransfer(input: unknown) {
 
 export async function listCountSessions(opts?: { store_id?: number; status?: string }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.store_id) where.store_id = opts.store_id;
     if (opts?.status) where.status = opts.status;
@@ -157,7 +163,7 @@ export async function listCountSessions(opts?: { store_id?: number; status?: str
 
 export async function getStockCountSessionById(id: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
     const session = await db.stockCountSession.findFirst({
       where: { id, organizationId },
       include: {
@@ -179,8 +185,7 @@ export async function getStockCountSessionById(id: number) {
 
 export async function createStockCountSession(store_id: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin','store_manager'].includes(session.role)) return { success: false, error: 'Insufficient permissions' };
+    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
     const sessionNumber = `CNT-${Date.now()}`;
     // Snapshot current book quantities
     const stocks = await db.storeStock.findMany({
@@ -213,7 +218,7 @@ export async function createStockCountSession(store_id: number) {
 
 export async function updateCountLine(session_id: number, line_id: number, counted_qty: number) {
   try {
-    const { db } = await requireTenantContext();
+    const { db } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
     const line = await db.stockCountLine.update({
       where: { id: line_id } as any,
       data: { counted_qty },
@@ -226,8 +231,7 @@ export async function updateCountLine(session_id: number, line_id: number, count
 
 export async function approveCountSession(session_id: number) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin','finance'].includes(session.role)) return { success: false, error: 'Finance or admin approval required' };
+    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_APPROVE_ROLES);
 
     const countSession = await db.stockCountSession.findFirst({
       where: { id: session_id, organizationId },
@@ -333,7 +337,7 @@ export async function getStockLedger(opts: {
   limit?: number;
 }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
     const page = opts.page ?? 1;
     const limit = opts.limit ?? 50;
     const where: any = { organizationId };
@@ -365,7 +369,7 @@ export async function getStockLedger(opts: {
 
 export async function quarantineBatch(batch_id: number, is_quarantined = true) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
     const batch = await db.itemBatch.update({
       where: { id: batch_id, organizationId },
       data: { is_quarantined },
@@ -382,7 +386,7 @@ export async function quarantineBatch(batch_id: number, is_quarantined = true) {
 
 export async function listItemBatches(opts?: { search?: string }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) {
       where.batch_no = { contains: opts.search, mode: 'insensitive' };
@@ -409,7 +413,7 @@ export async function recordConsumption(input: {
   reason?: string | null;
 }) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
+    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_CONSUMPTION_ROLES);
     
     // Verify inputs
     const store = await db.store.findFirst({ where: { id: input.store_id, organizationId } });

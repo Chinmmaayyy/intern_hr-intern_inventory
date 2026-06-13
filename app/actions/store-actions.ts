@@ -1,7 +1,12 @@
 'use server';
-import { requireTenantContext } from '@/backend/tenant';
+import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+
+// Role groups for inventory store operations
+const INVENTORY_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+const INVENTORY_ADMIN_ROLES = ['admin'];
+const INVENTORY_FINANCE_ROLES = ['admin', 'finance'];
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -34,7 +39,7 @@ const storeItemSettingSchema = z.object({
 
 export async function listStores(opts?: { search?: string; store_type?: string; is_active?: boolean }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) where.name = { contains: opts.search, mode: 'insensitive' };
     if (opts?.store_type) where.store_type = opts.store_type;
@@ -57,10 +62,7 @@ export async function listStores(opts?: { search?: string; store_type?: string; 
 
 export async function createStore(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin', 'store_manager'].includes(session.role)) {
-      return { success: false, error: 'Insufficient permissions' };
-    }
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = storeSchema.parse(input);
     const existing = await db.store.findFirst({ where: { store_code: data.store_code, organizationId } });
     if (existing) return { success: false, error: `Store code '${data.store_code}' already exists` };
@@ -81,10 +83,7 @@ export async function createStore(input: unknown) {
 
 export async function updateStore(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin', 'store_manager'].includes(session.role)) {
-      return { success: false, error: 'Insufficient permissions' };
-    }
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = storeSchema.partial().parse(input);
     const row = await db.store.update({ where: { id } as any, data });
     revalidatePath('/admin/inventory/stores');
@@ -96,7 +95,7 @@ export async function updateStore(id: number, input: unknown) {
 
 export async function getStoreById(id: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const store = await db.store.findFirst({
       where: { id, organizationId },
       include: {
@@ -124,7 +123,7 @@ export async function getStoreById(id: number) {
 
 export async function getStoreStock(store_id: number, opts?: { search?: string; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 50;
     const where: any = { store_id, organizationId };
@@ -160,7 +159,7 @@ export async function getStoreStock(store_id: number, opts?: { search?: string; 
 
 export async function upsertStoreItemSetting(input: unknown) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const data = storeItemSettingSchema.parse(input);
     const row = await db.storeItemSetting.upsert({
       where: { store_id_item_id: { store_id: data.store_id, item_id: data.item_id } },
@@ -194,10 +193,7 @@ export async function postOpeningStock(
   }>
 ) {
   try {
-    const { db, organizationId, session } = await requireTenantContext();
-    if (!['admin', 'store_manager'].includes(session.role)) {
-      return { success: false, error: 'Insufficient permissions' };
-    }
+    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
     const store = await db.store.findFirst({ where: { id: store_id, organizationId } });
     if (!store) return { success: false, error: 'Store not found' };
 
@@ -279,7 +275,7 @@ export async function postOpeningStock(
 
 export async function getStoreValuationSummary(store_id?: number) {
   try {
-    const { db, organizationId } = await requireTenantContext();
+    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_FINANCE_ROLES);
     const where: any = { organizationId };
     if (store_id) where.store_id = store_id;
     const stocks = await db.storeStock.findMany({

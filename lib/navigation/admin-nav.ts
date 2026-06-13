@@ -50,7 +50,7 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
             { label: 'HR', href: '/admin/hr', icon: Briefcase },
             { label: 'Operation Theatre', href: '/admin/ot/dashboard', icon: Scissors },
             { label: 'Emergency Room', href: '/admin/er/dashboard', icon: Siren },
-            { label: 'Inventory', href: '/admin/inventory', icon: Package },
+            { label: 'Inventory', href: '/admin/inventory', icon: Package, permissions: ['inventory.view'] },
         ],
     },
     {
