@@ -58,6 +58,7 @@ const MODULE_META: Record<string, { label: string; icon: any; href: string; colo
     hr: { label: 'HR', icon: Users, href: '/admin/hr', color: 'text-blue-500' },
     insurance: { label: 'Insurance', icon: Shield, href: '/insurance', color: 'text-indigo-500' },
     patient_portal: { label: 'Portal', icon: Activity, href: '/patient', color: 'text-rose-500' },
+    inventory: { label: 'Inventory', icon: Package, href: '/admin/inventory', color: 'text-amber-600' },
 };
 
 export default function AdminDashboard() {

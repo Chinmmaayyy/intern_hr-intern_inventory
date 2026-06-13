@@ -7,7 +7,7 @@
   },
   "scripts": {
     "predev": "node scripts/check-deps-sync.js && prisma generate",
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "dev:fresh": "npm run clean && npm install && npm run dev",
     "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "setup": "npm install && prisma generate && npm run clean",

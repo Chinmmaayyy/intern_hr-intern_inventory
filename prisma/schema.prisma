@@ -98,6 +98,20 @@ model Organization {
   patient_deposits              PatientDeposit[]
   credit_notes                  CreditNote[]
   financial_periods             FinancialPeriod[]
+  item_categories               ItemCategory[]
+  item_masters                  ItemMaster[]
+  item_vendors                  ItemVendor[]
+  stores                        Store[]
+  store_item_settings           StoreItemSetting[]
+  item_batches                  ItemBatch[]
+  store_stocks                  StoreStock[]
+  inventory_movements           InventoryMovement[]
+  purchase_requisitions         PurchaseRequisition[]
+  indents                       Indent[]
+  stock_issues                  StockIssue[]
+  stock_transfers               StockTransfer[]
+  stock_count_sessions          StockCountSession[]
+  stock_adjustments             StockAdjustment[]
   bank_transactions             BankTransaction[]
   dunning_rules                 DunningRule[]
   dunning_logs                  DunningLog[]
@@ -250,6 +264,7 @@ model Branch {
   updated_at     DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  stores       Store[]
 
   @@index([organizationId])
   @@map("branches")
@@ -486,6 +501,9 @@ model User {
   organization      Organization      @relation(fields: [organizationId], references: [id])
   appointment_slots AppointmentSlot[]
   employee_profile  Employee?         // reverse link to HR Employee record
+  incharge_stores   Store[]
+  transfers_dispatched StockTransfer[]  @relation("TransferDispatchUser")
+  transfers_received   StockTransfer[]  @relation("TransferReceiveUser")
 
   @@index([organizationId])
   @@index([doctor_group_id])
@@ -1030,6 +1048,8 @@ model admissions {
   gl_journal_lines       GL_JournalLine[]
   tally_exports          TallyExport[]
   insurance_preauths     InsurancePreAuth[]
+  inventory_movements    InventoryMovement[]
+  indents                Indent[]
 
   @@index([organizationId])
   @@index([status])
@@ -1286,6 +1306,7 @@ model charge_catalog {
   updated_at       DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  items        ItemMaster[]
 
   @@index([organizationId])
 }
@@ -1808,7 +1829,7 @@ model PharmacySupplier {
 model PurchaseOrder {
   id             Int       @id @default(autoincrement())
   po_number      String    @unique
-  supplier_id    Int
+  supplier_id    Int?
   vendor_id      Int?      // Unified vendor reference (replaces supplier_id over time)
   status         String    @default("Draft") // Draft, Submitted, Approved, Rejected, Partially Received, Received, Cancelled
   total_amount   Float     @default(0)
@@ -1820,33 +1841,43 @@ model PurchaseOrder {
   notes          String?
   organizationId String
   created_at     DateTime  @default(now())
+  receiving_store_id Int?
+  pr_id          Int?
 
   organization         Organization              @relation(fields: [organizationId], references: [id])
-  supplier             PharmacySupplier          @relation(fields: [supplier_id], references: [id])
+  supplier             PharmacySupplier?         @relation(fields: [supplier_id], references: [id])
   vendor               Vendor?                   @relation("VendorPurchaseOrders", fields: [vendor_id], references: [id])
+  receiving_store      Store?                    @relation("StorePurchaseOrders", fields: [receiving_store_id], references: [id])
+  pr                   PurchaseRequisition?      @relation(fields: [pr_id], references: [id])
   items                PurchaseOrderItem[]
   grns                 GoodsReceiptNote[]
   purchase_invoices    PharmacyPurchaseInvoice[]
 
   @@index([organizationId])
   @@index([vendor_id])
+  @@index([receiving_store_id])
   @@map("purchase_orders")
 }
 
 model PurchaseOrderItem {
   id                Int    @id @default(autoincrement())
   po_id             Int
-  medicine_id       Int
+  medicine_id       Int?
+  item_id           Int?
   quantity_ordered  Int
   quantity_received Int    @default(0)
   unit_price        Float
   gst_rate          Float  @default(0)
   hsn_code          String?
   notes             String?
+  uom               String?
+  conversion_to_base Float? @default(1.0)
 
   purchase_order PurchaseOrder @relation(fields: [po_id], references: [id])
+  item           ItemMaster?   @relation(fields: [item_id], references: [id])
 
   @@index([po_id])
+  @@index([item_id])
   @@map("purchase_order_items")
 }
 
@@ -1868,16 +1899,21 @@ model GoodsReceiptNote {
   organizationId    String
   received_at       DateTime @default(now())
   created_at        DateTime @default(now())
+  store_id          Int?
 
   organization   Organization               @relation(fields: [organizationId], references: [id])
   purchase_order PurchaseOrder?             @relation(fields: [po_id], references: [id])
   supplier       PharmacySupplier?          @relation(fields: [supplier_id], references: [id])
   vendor         Vendor?                    @relation("VendorGRNs", fields: [vendor_id], references: [id])
+  store          Store?                     @relation("StoreGRNs", fields: [store_id], references: [id])
   batches        pharmacy_batch_inventory[]
+  items          GoodsReceiptNoteItem[]
+  general_batches ItemBatch[]
 
   @@index([organizationId])
   @@index([po_id])
   @@index([vendor_id])
+  @@index([store_id])
   @@map("goods_receipt_notes")
 }
 
@@ -1888,7 +1924,9 @@ model GoodsReceiptNote {
 model PharmacyReturn {
   id               Int      @id @default(autoincrement())
   return_type      String   // patient_return, supplier_return, expired_stock, damage_writeoff
-  medicine_id      Int
+  medicine_id      Int?
+  item_id          Int?
+  store_id         Int?
   batch_id         String?
   batch_record_id  Int?     // FK to pharmacy_batch_inventory
   quantity         Int
@@ -1906,10 +1944,14 @@ model PharmacyReturn {
   created_at       DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  item         ItemMaster?  @relation(fields: [item_id], references: [id])
+  store        Store?       @relation(fields: [store_id], references: [id])
 
   @@index([organizationId])
   @@index([return_type])
   @@index([vendor_id])
+  @@index([item_id])
+  @@index([store_id])
   @@map("pharmacy_returns")
 }
 
@@ -2397,6 +2439,8 @@ model Vendor {
   pharmacy_purchase_orders PurchaseOrder[]            @relation("VendorPurchaseOrders")
   pharmacy_grns            GoodsReceiptNote[]         @relation("VendorGRNs")
   pharmacy_purchase_invoices PharmacyPurchaseInvoice[]
+  item_vendors             ItemVendor[]
+  item_batches             ItemBatch[]
 
   @@unique([vendor_code, organizationId])
   @@index([organizationId])
@@ -3287,6 +3331,9 @@ model GL_Account {
   asset_categories_as_depreciation_account AssetCategory[]  @relation("DepreciationAccount")
   asset_categories_as_expense_account      AssetCategory[]  @relation("ExpenseAccount")
   budget_lines                             BudgetLine[]
+  item_categories_as_inventory             ItemCategory[]   @relation("CategoryInventoryAccount")
+  item_categories_as_expense               ItemCategory[]   @relation("CategoryExpenseAccount")
+  item_categories_as_cogs                  ItemCategory[]   @relation("CategoryCOGSAccount")
   admissions                               admissions?      @relation(fields: [admissionsAdmission_id], references: [admission_id])
   admissionsAdmission_id                   String?
 
@@ -3322,6 +3369,7 @@ model GL_JournalEntry {
   reversed_by            GL_JournalEntry?    @relation("JournalReversal")
   lines                  GL_JournalLine[]
   depreciation_entries   DepreciationEntry[]
+  inventory_movements    InventoryMovement[]
   admissions             admissions?         @relation(fields: [admissionsAdmission_id], references: [admission_id])
   admissionsAdmission_id String?
 
@@ -4034,10 +4082,17 @@ model SurgeryConsumable {
   is_implant         Boolean @default(false)
   batch_no           String?
   serial_no          String? // for implants
+  item_id            Int?
+  store_id           Int?
+  movement_id        Int?
 
   surgery SurgeryRequest @relation(fields: [surgery_request_id], references: [id], onDelete: Cascade)
+  item    ItemMaster?    @relation(fields: [item_id], references: [id])
+  store   Store?         @relation(fields: [store_id], references: [id])
 
   @@index([surgery_request_id])
+  @@index([item_id])
+  @@index([store_id])
   @@map("surgery_consumables")
 }
 
@@ -4692,7 +4747,8 @@ model PharmacyPurchaseInvoice {
 model PharmacyPurchaseInvoiceLine {
   id              Int    @id @default(autoincrement())
   invoice_id      Int
-  medicine_id     Int
+  medicine_id     Int?
+  item_id         Int?
   grn_id          Int?
   po_item_id      Int?
   quantity        Int
@@ -4705,9 +4761,11 @@ model PharmacyPurchaseInvoiceLine {
   hsn_code        String?
 
   invoice  PharmacyPurchaseInvoice  @relation(fields: [invoice_id], references: [id])
-  medicine pharmacy_medicine_master @relation(fields: [medicine_id], references: [id])
+  medicine pharmacy_medicine_master? @relation(fields: [medicine_id], references: [id])
+  item     ItemMaster?              @relation(fields: [item_id], references: [id])
 
   @@index([invoice_id])
+  @@index([item_id])
   @@map("pharmacy_purchase_invoice_lines")
 }
 
@@ -4731,4 +4789,509 @@ model DispenseAllocation {
   @@index([order_item_id])
   @@index([batch_id])
   @@map("dispense_allocations")
+}
+
+// ========================================
+// MODULE — General Inventory & Materials Management
+// ========================================
+
+model ItemCategory {
+  id                      Int          @id @default(autoincrement())
+  name                    String
+  parent_id               Int?
+  item_type               String       // CONSUMABLE, REAGENT, IMPLANT, LINEN, STATIONERY, MAINTENANCE, EQUIPMENT_SPARE, FOOD_DIETARY, OTHER
+  gl_inventory_account_id String?      // FK to GL_Account
+  gl_expense_account_id   String?      // FK to GL_Account
+  gl_cogs_account_id      String?      // FK to GL_Account
+  default_gst_rate        Float        @default(0)
+  organizationId          String
+  created_at              DateTime     @default(now())
+  updated_at              DateTime     @updatedAt
+
+  organization            Organization @relation(fields: [organizationId], references: [id])
+  parent                  ItemCategory? @relation("CategoryHierarchy", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children                ItemCategory[] @relation("CategoryHierarchy")
+  items                   ItemMaster[]
+  gl_inventory_account    GL_Account?  @relation("CategoryInventoryAccount", fields: [gl_inventory_account_id], references: [id])
+  gl_expense_account      GL_Account?  @relation("CategoryExpenseAccount", fields: [gl_expense_account_id], references: [id])
+  gl_cogs_account         GL_Account?  @relation("CategoryCOGSAccount", fields: [gl_cogs_account_id], references: [id])
+
+  @@unique([name, organizationId])
+  @@index([organizationId])
+  @@map("item_categories")
+}
+
+model ItemMaster {
+  id                   Int          @id @default(autoincrement())
+  item_code            String
+  name                 String
+  description          String?
+  category_id          Int
+  item_type            String       // CONSUMABLE, REAGENT, IMPLANT, LINEN, STATIONERY, MAINTENANCE, EQUIPMENT_SPARE, FOOD_DIETARY, OTHER
+  base_uom             String
+  purchase_uom         String
+  uom_conversion       Float        @default(1.0)
+  hsn_sac_code         String?
+  gst_rate             Float        @default(0)
+  std_purchase_price   Float        @default(0)
+  selling_price        Float        @default(0)
+  mrp                  Float        @default(0)
+  is_batch_tracked     Boolean      @default(false)
+  is_expiry_tracked    Boolean      @default(false)
+  is_patient_chargeable Boolean     @default(false)
+  charge_catalog_id    Int?         // FK to charge_catalog
+  is_returnable        Boolean      @default(true)
+  is_cold_chain        Boolean      @default(false)
+  abc_class            String?      // A, B, C
+  double_check_rop     Boolean      @default(false) // placeholder config
+  ved_class            String?      // V, E, D
+  min_level            Int          @default(0)
+  max_level            Int          @default(0)
+  reorder_point        Int          @default(0)
+  lead_time_days       Int          @default(0)
+  barcode              String?
+  status               String       @default("Active") // Draft, Active, Discontinued
+  organizationId       String
+  created_at           DateTime     @default(now())
+  updated_at           DateTime     @updatedAt
+
+  organization         Organization @relation(fields: [organizationId], references: [id])
+  category             ItemCategory @relation(fields: [category_id], references: [id])
+  charge_catalog       charge_catalog? @relation(fields: [charge_catalog_id], references: [id])
+  
+  vendors              ItemVendor[]
+  batches              ItemBatch[]
+  store_stocks         StoreStock[]
+  store_settings       StoreItemSetting[]
+  movements            InventoryMovement[]
+  purchase_order_items PurchaseOrderItem[]
+  requisition_items    PurchaseRequisitionItem[]
+  indent_items         IndentItem[]
+  stock_issue_items    StockIssueItem[]
+  stock_transfer_items StockTransferItem[]
+  count_lines          StockCountLine[]
+  surgery_consumables  SurgeryConsumable[]
+  purchase_invoice_lines PharmacyPurchaseInvoiceLine[]
+  pharmacy_returns     PharmacyReturn[]
+  grn_items            GoodsReceiptNoteItem[]
+
+  @@unique([item_code, organizationId])
+  @@index([organizationId])
+  @@index([category_id])
+  @@map("item_master")
+}
+
+model ItemVendor {
+  id                Int          @id @default(autoincrement())
+  item_id           Int
+  vendor_id         Int
+  vendor_item_code  String?
+  last_price        Float        @default(0)
+  preference_rank   Int          @default(1)
+  organizationId    String
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  item              ItemMaster   @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  vendor            Vendor       @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@unique([item_id, vendor_id])
+  @@index([organizationId])
+  @@map("item_vendors")
+}
+
+model Store {
+  id                Int          @id @default(autoincrement())
+  store_code        String
+  name              String
+  store_type        String       // CENTRAL, PHARMACY, WARD, OT, ER, LAB, RADIOLOGY, MAINTENANCE, HOUSEKEEPING, KITCHEN, CSSD
+  branch_id         String?
+  parent_store_id   Int?
+  cost_center       String?
+  incharge_user_id  String?
+  is_active         Boolean      @default(true)
+  organizationId    String
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  branch            Branch?      @relation(fields: [branch_id], references: [id])
+  parent_store      Store?       @relation("StoreReplenishment", fields: [parent_store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  child_stores      Store[]      @relation("StoreReplenishment")
+  incharge_user     User?        @relation(fields: [incharge_user_id], references: [id])
+
+  store_stocks      StoreStock[]
+  store_settings    StoreItemSetting[]
+  movements         InventoryMovement[]
+  purchase_orders   PurchaseOrder[]      @relation("StorePurchaseOrders")
+  grns              GoodsReceiptNote[]   @relation("StoreGRNs")
+  requisitions      PurchaseRequisition[] @relation("StoreRequisitions")
+  indents_from      Indent[]             @relation("IndentFromStore")
+  indents_to        Indent[]             @relation("IndentToStore")
+  issues_from       StockIssue[]         @relation("IssueFromStore")
+  issues_to         StockIssue[]         @relation("IssueToStore")
+  transfers_from    StockTransfer[]      @relation("TransferFromStore")
+  transfers_to      StockTransfer[]      @relation("TransferToStore")
+  count_sessions    StockCountSession[]
+  adjustments       StockAdjustment[]
+  surgery_consumables SurgeryConsumable[]
+  pharmacy_returns  PharmacyReturn[]
+
+  @@unique([store_code, organizationId])
+  @@index([organizationId])
+  @@map("stores")
+}
+
+model StoreItemSetting {
+  id             Int          @id @default(autoincrement())
+  store_id       Int
+  item_id        Int
+  par_level      Int          @default(0)
+  reorder_point  Int          @default(0)
+  max_level      Int          @default(0)
+  auto_indent    Boolean      @default(false)
+  organizationId String
+  created_at     DateTime     @default(now())
+  updated_at     DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  store          Store        @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  item           ItemMaster   @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@unique([store_id, item_id])
+  @@index([organizationId])
+  @@map("store_item_settings")
+}
+
+model ItemBatch {
+  id              Int          @id @default(autoincrement())
+  item_id         Int
+  batch_no        String
+  expiry_date     DateTime?
+  mfg_date        DateTime?
+  mrp             Float?
+  cost_price      Float        @default(0)
+  grn_id          Int?
+  vendor_id       Int?
+  is_quarantined  Boolean      @default(false)
+  organizationId  String
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  item            ItemMaster   @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  grn             GoodsReceiptNote? @relation(fields: [grn_id], references: [id])
+  vendor          Vendor?      @relation(fields: [vendor_id], references: [id])
+
+  store_stocks    StoreStock[]
+  movements       InventoryMovement[]
+  issue_items     StockIssueItem[]
+  count_lines     StockCountLine[]
+  transfer_items  StockTransferItem[]
+
+  @@unique([item_id, batch_no])
+  @@index([organizationId])
+  @@map("item_batches")
+}
+
+model StoreStock {
+  id               Int          @id @default(autoincrement())
+  store_id         Int
+  item_id          Int
+  batch_id         Int?
+  quantity_on_hand Int          @default(0)
+  quantity_reserved Int         @default(0)
+  avg_unit_cost    Float        @default(0)
+  bin_location     String?
+  organizationId   String
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  store            Store        @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  item             ItemMaster   @relation(fields: [item_id], references: [id], onDelete: Cascade)
+  batch            ItemBatch?   @relation(fields: [batch_id], references: [id])
+
+  @@unique([store_id, item_id, batch_id])
+  @@index([organizationId])
+  @@map("store_stocks")
+}
+
+model InventoryMovement {
+  id              Int          @id @default(autoincrement())
+  organizationId  String
+  store_id        Int
+  item_id         Int
+  batch_id        Int?
+  movement_type   String       // OPENING, GRN_RECEIPT, ISSUE, INDENT_ISSUE, INDENT_RECEIPT, TRANSFER_OUT, TRANSFER_IN, CONSUMPTION, PATIENT_CHARGE, RETURN_TO_STORE, SUPPLIER_RETURN, EXPIRY_WRITEOFF, DAMAGE_WRITEOFF, ADJUSTMENT_PLUS, ADJUSTMENT_MINUS
+  quantity_in     Int          @default(0)
+  quantity_out    Int          @default(0)
+  unit_cost       Float        @default(0)
+  value           Float        @default(0)
+  balance_after   Int
+  source_type     String?      // PR, PO, GRN, INDENT, ISSUE, TRANSFER, ADJUSTMENT, SURGERY, CONSUMPTION
+  source_id       String?      // Can be Int or String UUID, stored as String
+  cost_center     String?
+  patient_id      String?      // for patient charges
+  admission_id    String?      // for patient charges
+  user_id         String?      // operator
+  reason          String?
+  gl_journal_id   String?      // FK to GL_JournalEntry
+  created_at      DateTime     @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  store           Store        @relation(fields: [store_id], references: [id])
+  item            ItemMaster   @relation(fields: [item_id], references: [id])
+  batch           ItemBatch?   @relation(fields: [batch_id], references: [id])
+  gl_journal      GL_JournalEntry? @relation(fields: [gl_journal_id], references: [id])
+  patient         admissions?  @relation(fields: [admission_id], references: [admission_id])
+
+  @@index([organizationId])
+  @@index([store_id])
+  @@index([item_id])
+  @@index([batch_id])
+  @@index([movement_type])
+  @@index([created_at])
+  @@map("inventory_movements")
+}
+
+model PurchaseRequisition {
+  id                 Int                       @id @default(autoincrement())
+  pr_number          String                    @unique
+  requesting_store_id Int
+  status             String                    @default("Draft") // Draft, Submitted, Approved, Rejected, Converted, Cancelled
+  priority           String                    @default("NORMAL") // NORMAL, URGENT, EMERGENCY
+  approved_by        String?
+  approved_at        DateTime?
+  organizationId     String
+  created_at         DateTime                  @default(now())
+  updated_at         DateTime                  @updatedAt
+
+  organization       Organization              @relation(fields: [organizationId], references: [id])
+  store              Store                     @relation("StoreRequisitions", fields: [requesting_store_id], references: [id])
+  items              PurchaseRequisitionItem[]
+  purchase_orders    PurchaseOrder[]
+
+  @@index([organizationId])
+  @@map("purchase_requisitions")
+}
+
+model PurchaseRequisitionItem {
+  id             Int                 @id @default(autoincrement())
+  pr_id          Int
+  item_id        Int
+  quantity       Int
+  required_by    DateTime?
+  notes          String?
+
+  requisition    PurchaseRequisition @relation(fields: [pr_id], references: [id], onDelete: Cascade)
+  item           ItemMaster          @relation(fields: [item_id], references: [id])
+
+  @@index([pr_id])
+  @@map("purchase_requisition_items")
+}
+
+model Indent {
+  id              Int          @id @default(autoincrement())
+  indent_number   String       @unique
+  from_store_id   Int          // requesting store
+  to_store_id     Int          // issuing store (parent or central)
+  cost_center     String?
+  priority        String       @default("NORMAL") // NORMAL, URGENT, EMERGENCY
+  patient_id      String?      // optional patient/admission reference
+  admission_id    String?
+  status          String       @default("Draft") // Draft, Submitted, Approved, Partially Issued, Issued, Closed, Rejected, Cancelled
+  approved_by     String?
+  approved_at     DateTime?
+  organizationId  String
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  from_store      Store        @relation("IndentFromStore", fields: [from_store_id], references: [id])
+  to_store        Store        @relation("IndentToStore", fields: [to_store_id], references: [id])
+  patient         admissions?  @relation(fields: [admission_id], references: [admission_id])
+
+  items           IndentItem[]
+  issues          StockIssue[]
+
+  @@index([organizationId])
+  @@map("indents")
+}
+
+model IndentItem {
+  id             Int          @id @default(autoincrement())
+  indent_id      Int
+  item_id        Int
+  qty_requested  Int
+  qty_approved   Int          @default(0)
+  qty_issued     Int          @default(0)
+  qty_received   Int          @default(0)
+
+  indent         Indent       @relation(fields: [indent_id], references: [id], onDelete: Cascade)
+  item           ItemMaster   @relation(fields: [item_id], references: [id])
+
+  @@index([indent_id])
+  @@map("indent_items")
+}
+
+model StockIssue {
+  id             Int              @id @default(autoincrement())
+  issue_number   String           @unique
+  indent_id      Int?
+  from_store_id  Int              // issuing store
+  to_store_id    Int?             // receiving store
+  cost_center    String?          // if direct consumption issue
+  organizationId String
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  indent         Indent?          @relation(fields: [indent_id], references: [id])
+  from_store     Store            @relation("IssueFromStore", fields: [from_store_id], references: [id])
+  to_store       Store?           @relation("IssueToStore", fields: [to_store_id], references: [id])
+  items          StockIssueItem[]
+
+  @@index([organizationId])
+  @@map("stock_issues")
+}
+
+model StockIssueItem {
+  id             Int            @id @default(autoincrement())
+  issue_id       Int
+  item_id        Int
+  batch_id       Int?
+  quantity       Int
+  unit_cost      Float          @default(0)
+
+  issue          StockIssue     @relation(fields: [issue_id], references: [id], onDelete: Cascade)
+  item           ItemMaster     @relation(fields: [item_id], references: [id])
+  batch          ItemBatch?     @relation(fields: [batch_id], references: [id])
+
+  @@index([issue_id])
+  @@map("stock_issue_items")
+}
+
+model StockTransfer {
+  id              Int                 @id @default(autoincrement())
+  transfer_number String              @unique
+  from_store_id   Int
+  to_store_id     Int
+  status          String              @default("Draft") // Draft, Dispatched, In Transit, Received, Cancelled
+  dispatch_user_id String?
+  dispatch_at     DateTime?
+  receive_user_id String?
+  received_at     DateTime?
+  organizationId  String
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @updatedAt
+
+  organization    Organization        @relation(fields: [organizationId], references: [id])
+  from_store      Store               @relation("TransferFromStore", fields: [from_store_id], references: [id])
+  to_store        Store               @relation("TransferToStore", fields: [to_store_id], references: [id])
+  dispatch_user   User?               @relation("TransferDispatchUser", fields: [dispatch_user_id], references: [id])
+  receive_user    User?               @relation("TransferReceiveUser", fields: [receive_user_id], references: [id])
+
+  items           StockTransferItem[]
+
+  @@index([organizationId])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id             Int           @id @default(autoincrement())
+  transfer_id    Int
+  item_id        Int
+  batch_id       Int?
+  quantity       Int
+  unit_cost      Float         @default(0)
+
+  transfer       StockTransfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade)
+  item           ItemMaster    @relation(fields: [item_id], references: [id])
+  batch          ItemBatch?    @relation(fields: [batch_id], references: [id])
+
+  @@index([transfer_id])
+  @@map("stock_transfer_items")
+}
+
+model StockCountSession {
+  id             Int              @id @default(autoincrement())
+  session_number String           @unique
+  store_id       Int
+  status         String           @default("Draft") // Draft, Frozen, Counting, Review, Approved, Posted
+  frozen_at      DateTime?
+  approved_by    String?
+  approved_at    DateTime?
+  organizationId String
+  created_at     DateTime         @default(now())
+  updated_at     DateTime         @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id])
+  store          Store            @relation(fields: [store_id], references: [id])
+  lines          StockCountLine[]
+  adjustments    StockAdjustment[]
+
+  @@index([organizationId])
+  @@map("stock_count_sessions")
+}
+
+model StockCountLine {
+  id             Int               @id @default(autoincrement())
+  session_id     Int
+  item_id        Int
+  batch_id       Int?
+  book_qty       Int               @default(0)
+  counted_qty    Int               @default(0)
+  recount_qty    Int?
+  variance_value Float             @default(0)
+  recount_requested Boolean        @default(false)
+
+  session        StockCountSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  item           ItemMaster        @relation(fields: [item_id], references: [id])
+  batch          ItemBatch?        @relation(fields: [batch_id], references: [id])
+
+  @@index([session_id])
+  @@map("stock_count_lines")
+}
+
+model StockAdjustment {
+  id                Int               @id @default(autoincrement())
+  adjustment_number String            @unique
+  store_id          Int
+  count_session_id  Int?
+  reason_code       String            // DAMAGE, EXPIRY, COUNT_VARIANCE, THEFT_LOSS, DATA_CORRECTION
+  status            String            @default("Pending") // Pending, Approved, Posted, Rejected
+  approved_by       String?
+  approved_at       DateTime?
+  gl_posted         Boolean           @default(false)
+  organizationId    String
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+
+  organization      Organization      @relation(fields: [organizationId], references: [id])
+  store             Store             @relation(fields: [store_id], references: [id])
+  count_session     StockCountSession? @relation(fields: [count_session_id], references: [id])
+
+  @@index([organizationId])
+  @@map("stock_adjustments")
+}
+
+model GoodsReceiptNoteItem {
+  id                Int              @id @default(autoincrement())
+  grn_id            Int
+  item_id           Int
+  quantity_accepted Int
+  quantity_rejected Int              @default(0)
+  rejection_reason  String?
+  batch_no          String?
+  expiry_date       DateTime?
+  unit_price        Float            @default(0)
+  gst_rate          Float            @default(0)
+
+  grn               GoodsReceiptNote @relation(fields: [grn_id], references: [id], onDelete: Cascade)
+  item              ItemMaster       @relation(fields: [item_id], references: [id])
+
+  @@index([grn_id])
+  @@map("goods_receipt_note_items")
 }
