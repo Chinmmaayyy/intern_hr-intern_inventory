@@ -5,7 +5,7 @@ import { AppShell } from '@/app/components/layout/AppShell';
 import {
     LayoutDashboard, Users, UserCheck,
     UserPlus, CalendarCheck, ClipboardList, Loader2, AlertCircle,
-    Briefcase
+    Briefcase, Clock
 } from 'lucide-react';
 import { getHRDashboard } from '@/app/actions/hr-actions';
 import Link from 'next/link';
@@ -14,6 +14,7 @@ interface DashboardData {
     totalStrength: number;
     roleBreakdown: { role: string; count: number }[];
     staffList: { id: string; name: string; role: string; code: string; phone: string | null; email: string | null }[];
+    pendingRegularizationsCount: number;
 }
 
 export default function HRDashboard() {
@@ -70,6 +71,7 @@ export default function HRDashboard() {
         { label: 'Total Staff', value: data.totalStrength, icon: Users, color: 'from-blue-500 to-indigo-600' },
         { label: 'Roles', value: data.roleBreakdown.length, icon: Briefcase, color: 'from-teal-500 to-emerald-600' },
         { label: 'Staff Listed', value: data.staffList.length, icon: UserCheck, color: 'from-green-500 to-lime-600' },
+        { label: 'Pending Regularizations', value: data.pendingRegularizationsCount, icon: Clock, color: 'from-orange-500 to-amber-600', href: '/hr/attendance/regularizations' },
     ];
 
     return (
@@ -80,18 +82,32 @@ export default function HRDashboard() {
             refreshing={loading}
         >
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-                {kpiCards.map((kpi) => (
-                    <div key={kpi.label} className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5">
-                        <div className="flex items-center justify-between mb-3">
-                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{kpi.label}</p>
-                            <div className={`p-2 rounded-xl bg-gradient-to-br ${kpi.color} text-white`}>
-                                <kpi.icon className="h-4 w-4" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {kpiCards.map((kpi) => {
+                    const CardContent = (
+                        <>
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">{kpi.label}</p>
+                                <div className={`p-2 rounded-xl bg-gradient-to-br ${kpi.color} text-white`}>
+                                    <kpi.icon className="h-4 w-4" />
+                                </div>
                             </div>
+                            <p className="text-2xl font-black text-gray-900">{kpi.value}</p>
+                        </>
+                    );
+                    if (kpi.href) {
+                        return (
+                            <Link key={kpi.label} href={kpi.href} className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5 hover:border-orange-500 hover:shadow-md transition-all cursor-pointer block">
+                                {CardContent}
+                            </Link>
+                        );
+                    }
+                    return (
+                        <div key={kpi.label} className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5">
+                            {CardContent}
                         </div>
-                        <p className="text-2xl font-black text-gray-900">{kpi.value}</p>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
 
             {/* Quick Actions */}

@@ -68,6 +68,10 @@ model Organization {
   asset_maintenance              AssetMaintenance[]
   asset_transfers                AssetTransfer[]
   attendances                    Attendance[]
+  attendance_punches             AttendancePunch[]
+  attendance_devices             AttendanceDevice[]
+  attendance_regularizations     AttendanceRegularization[]
+  attendance_policy              AttendancePolicy?
   bank_transactions              BankTransaction[]
   bed_transfers                  BedTransfer[]
   beds                           beds[]
@@ -1957,10 +1961,12 @@ model Employee {
   updated_at     DateTime @updatedAt
 
   organization      Organization      @relation(fields: [organizationId], references: [id])
-  user              User?             @relation(fields: [user_id], references: [id])
-  attendances       Attendance[]
-  leave_requests    LeaveRequest[]
-  shift_assignments ShiftAssignment[]
+  user                       User?                      @relation(fields: [user_id], references: [id])
+  attendances                Attendance[]
+  leave_requests             LeaveRequest[]
+  shift_assignments          ShiftAssignment[]
+  attendance_punches         AttendancePunch[]
+  attendance_regularizations AttendanceRegularization[]
 
   documents EmployeeDocument[]
 
@@ -1988,22 +1994,124 @@ model EmployeeDocument {
 }
 
 model Attendance {
-  id             Int          @id @default(autoincrement())
-  employee_id    Int
-  date           DateTime
-  check_in       DateTime?
-  check_out      DateTime?
-  total_hours    Float?
-  status         String       @default("Present")
-  organizationId String
-  created_at     DateTime     @default(now())
-  employee       Employee     @relation(fields: [employee_id], references: [id])
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  id                  Int                       @id @default(autoincrement())
+  employee_id         Int
+  date                DateTime
+  check_in            DateTime?
+  check_out           DateTime?
+  total_hours         Float?
+  status              String                    @default("Present")
+  organizationId      String
+  created_at          DateTime                  @default(now())
+  employee            Employee                  @relation(fields: [employee_id], references: [id])
+  organization        Organization              @relation(fields: [organizationId], references: [id])
+  late_minutes        Int?
+  early_out_minutes   Int?
+  overtime_minutes    Int?
+  ot_approved         Boolean                   @default(false)
+  is_night_shift      Boolean                   @default(false)
+  source              AttendanceSource          @default(MANUAL)
+  regularization_id   Int?
+  shift_assignment_id Int?
+  regularization      AttendanceRegularization? @relation(fields: [regularization_id], references: [id])
 
   @@index([organizationId])
   @@index([employee_id])
   @@index([date])
   @@map("attendances")
+}
+
+enum AttendanceSource {
+  BIOMETRIC
+  MOBILE
+  MANUAL
+  SYSTEM
+}
+
+model AttendancePunch {
+  id              Int              @id @default(autoincrement())
+  employee_id     Int
+  punch_time      DateTime
+  direction       String?
+  source          AttendanceSource
+  device_id       String?
+  geo_lat         Float?
+  geo_lng         Float?
+  raw_payload     Json?
+  organizationId  String
+  created_at      DateTime         @default(now())
+  employee        Employee         @relation(fields: [employee_id], references: [id])
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+
+  @@unique([employee_id, punch_time, source])
+  @@index([organizationId])
+  @@map("attendance_punches")
+}
+
+model AttendanceDevice {
+  id              Int          @id @default(autoincrement())
+  device_code     String       @unique
+  branch_id       String?
+  vendor          String?
+  webhook_secret  String
+  last_seen_at    DateTime?
+  is_active       Boolean      @default(true)
+  organizationId  String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@map("attendance_devices")
+}
+
+model AttendanceRegularization {
+  id                  Int                  @id @default(autoincrement())
+  employee_id         Int
+  date                DateTime
+  type                RegularizationType
+  reason              String
+  requested_check_in  DateTime?
+  requested_check_out DateTime?
+  status              RegularizationStatus @default(PENDING)
+  approved_by         Int?
+  approved_at         DateTime?
+  rejection_reason    String?
+  organizationId      String
+  created_at          DateTime             @default(now())
+  employee            Employee             @relation(fields: [employee_id], references: [id])
+  organization        Organization         @relation(fields: [organizationId], references: [id])
+  attendance          Attendance[]
+
+  @@index([organizationId])
+  @@map("attendance_regularizations")
+}
+
+enum RegularizationType {
+  MISSED_PUNCH
+  ON_DUTY
+  WFH
+}
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model AttendancePolicy {
+  id                        Int          @id @default(autoincrement())
+  organizationId            String       @unique
+  grace_minutes             Int          @default(10)
+  late_marks_for_half_day   Int          @default(3)
+  min_hours_full_day        Float        @default(8.0)
+  min_hours_half_day        Float        @default(4.0)
+  sandwich_rule_enabled     Boolean      @default(false)
+  max_regularizations_month Int          @default(3)
+  created_at                DateTime     @default(now())
+  updated_at                DateTime     @updatedAt
+  organization              Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("attendance_policies")
 }
 
 model LeaveType {
@@ -2047,6 +2155,7 @@ model ShiftPattern {
   name           String
   start_time     String
   end_time       String
+  is_overnight   Boolean           @default(false)
   organizationId String
   created_at     DateTime          @default(now())
   assignments    ShiftAssignment[]

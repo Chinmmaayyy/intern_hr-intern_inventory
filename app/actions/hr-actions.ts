@@ -77,12 +77,18 @@ export async function getHRDashboard() {
             }
         });
 
+        // 4. Fetch pending regularizations count
+        const pendingRegularizationsCount = await db.attendanceRegularization.count({
+            where: { organizationId, status: 'PENDING' }
+        });
+
         return {
             success: true,
             data: {
                 totalStrength: Object.values(analyticsMapping).reduce((a: number, b: number) => a + b, 0),
                 roleBreakdown: Object.entries(analyticsMapping).map(([role, count]) => ({ role, count })),
                 staffList: Array.from(personnelMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
+                pendingRegularizationsCount,
             },
         };
     } catch (error) {
@@ -332,9 +338,18 @@ export async function recordAttendance(data: {
         const dateObj = new Date(data.date);
         dateObj.setHours(0, 0, 0, 0);
 
-        // Check if attendance already exists for this date
+        const dateObjUTC = new Date(data.date);
+        dateObjUTC.setUTCHours(0, 0, 0, 0);
+
+        // Check if attendance already exists for this date (local or UTC midnight)
         const existing = await db.attendance.findFirst({
-            where: { employee_id: data.employeeId, date: dateObj },
+            where: {
+                employee_id: data.employeeId,
+                OR: [
+                    { date: dateObj },
+                    { date: dateObjUTC }
+                ]
+            },
         });
 
         let totalHours: number | null = null;
@@ -379,10 +394,15 @@ export async function getAttendanceForDate(date: string) {
     try {
         const { db } = await requireTenantContext();
 
-        const dateObj = new Date(date);
-        dateObj.setHours(0, 0, 0, 0);
-        const dateEnd = new Date(date);
-        dateEnd.setHours(23, 59, 59, 999);
+        const dateObjLocal = new Date(date);
+        dateObjLocal.setHours(0, 0, 0, 0);
+        const dateEndLocal = new Date(date);
+        dateEndLocal.setHours(23, 59, 59, 999);
+
+        const dateObjUTC = new Date(date);
+        dateObjUTC.setUTCHours(0, 0, 0, 0);
+        const dateEndUTC = new Date(date);
+        dateEndUTC.setUTCHours(23, 59, 59, 999);
 
         const employees = await db.employee.findMany({
             where: { is_active: true },
@@ -390,7 +410,12 @@ export async function getAttendanceForDate(date: string) {
         });
 
         const attendances = await db.attendance.findMany({
-            where: { date: { gte: dateObj, lte: dateEnd } },
+            where: {
+                OR: [
+                    { date: { gte: dateObjLocal, lte: dateEndLocal } },
+                    { date: { gte: dateObjUTC, lte: dateEndUTC } }
+                ]
+            },
         });
 
         const attendanceMap = Object.fromEntries(
@@ -529,15 +554,91 @@ export async function getLeaveBalance(employeeId: number) {
             },
         });
 
+        // Fetch organization policy to check if the sandwich rule is enabled
+        const emp = await db.employee.findUnique({
+            where: { id: employeeId },
+            select: { organizationId: true }
+        });
+        const organizationId = emp?.organizationId;
+
+        let policy = null;
+        if (organizationId) {
+            policy = await db.attendancePolicy.findUnique({
+                where: { organizationId }
+            });
+        }
+        const sandwichRuleEnabled = policy?.sandwich_rule_enabled ?? false;
+
+        const formatDateKey = (date: Date) => {
+            const d = new Date(date);
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        };
+
         const balances = leaveTypes.map((lt: any) => {
-            const used = approvedLeaves
-                .filter((l: any) => l.leave_type_id === lt.id)
-                .reduce((sum: number, l: any) => {
-                    const days = Math.ceil(
-                        (new Date(l.to_date).getTime() - new Date(l.from_date).getTime()) / (1000 * 60 * 60 * 24)
-                    ) + 1;
-                    return sum + days;
-                }, 0);
+            const typeLeaves = approvedLeaves.filter((l: any) => l.leave_type_id === lt.id);
+
+            // Track all dates that fall within the approved leave ranges
+            const leaveDatesSet = new Set<string>();
+            typeLeaves.forEach((l: any) => {
+                const start = new Date(l.from_date);
+                const end = new Date(l.to_date);
+                for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+                    leaveDatesSet.add(formatDateKey(d));
+                }
+            });
+
+            let used = 0;
+
+            if (sandwichRuleEnabled) {
+                // If sandwich rule is active, count all request days (including weekends)
+                used = leaveDatesSet.size;
+
+                // Also check for separate requests that "sandwich" a weekend
+                if (typeLeaves.length > 0) {
+                    let minDate = new Date(typeLeaves[0].from_date);
+                    let maxDate = new Date(typeLeaves[0].to_date);
+                    typeLeaves.forEach((l: any) => {
+                        const start = new Date(l.from_date);
+                        const end = new Date(l.to_date);
+                        if (start < minDate) minDate = start;
+                        if (end > maxDate) maxDate = end;
+                    });
+
+                    // Check every calendar day between minDate and maxDate
+                    for (let d = new Date(minDate); d <= maxDate; d.setUTCDate(d.getUTCDate() + 1)) {
+                        const dayOfWeek = d.getUTCDay(); // 0 = Sunday, 6 = Saturday
+                        if (dayOfWeek === 0 || dayOfWeek === 6) {
+                            const dateKey = formatDateKey(d);
+                            // Only check if it's not already covered in a leave request range
+                            if (!leaveDatesSet.has(dateKey)) {
+                                const diffToFriday = dayOfWeek === 6 ? -1 : -2;
+                                const diffToMonday = dayOfWeek === 6 ? 2 : 1;
+
+                                const friday = new Date(d);
+                                friday.setUTCDate(friday.getUTCDate() + diffToFriday);
+                                const fridayKey = formatDateKey(friday);
+
+                                const monday = new Date(d);
+                                monday.setUTCDate(monday.getUTCDate() + diffToMonday);
+                                const mondayKey = formatDateKey(monday);
+
+                                if (leaveDatesSet.has(fridayKey) && leaveDatesSet.has(mondayKey)) {
+                                    used += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // If sandwich rule is disabled, count only weekdays (exclude Saturday/Sunday)
+                leaveDatesSet.forEach((dateStr) => {
+                    const d = new Date(dateStr);
+                    const dayOfWeek = d.getUTCDay();
+                    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        used += 1;
+                    }
+                });
+            }
 
             return {
                 leaveType: lt.name,

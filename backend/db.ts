@@ -35,6 +35,7 @@ const TENANT_SCOPED_MODELS = new Set([
     'NursingNote', 'MedicationAdministration', 'ShiftHandover',
     'OPDConfig', 'Employee', 'Attendance',
     'LeaveType', 'LeaveRequest', 'ShiftPattern', 'ShiftAssignment',
+    'AttendancePunch', 'AttendanceDevice', 'AttendanceRegularization', 'AttendancePolicy',
     // Phase 4 models
     'Notification',
     // Security hardening models

@@ -89,6 +89,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
+  subItems?: { label: string; href: string }[];
 }
 
 interface NavSection {
@@ -437,7 +438,18 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
       items: [
         { label: "Dashboard", href: "/hr/dashboard", icon: LayoutDashboard },
         { label: "Employees", href: "/hr/employees", icon: Briefcase },
-        { label: "Attendance", href: "/hr/attendance", icon: Clock },
+        {
+          label: "Attendance",
+          href: "/hr/attendance",
+          icon: Clock,
+          subItems: [
+            { label: "Regularizations", href: "/hr/attendance/regularizations" },
+            { label: "Overtime Approvals", href: "/hr/attendance/overtime" },
+            { label: "Manual Entry", href: "/hr/attendance/manual-entry" },
+            { label: "Devices", href: "/hr/attendance/devices" },
+            { label: "Policy", href: "/hr/attendance/policy" },
+          ]
+        },
         { label: "Leave", href: "/hr/leave", icon: CalendarDays },
         { label: "Shifts", href: "/hr/shifts", icon: Timer },
         { label: "Reports", href: "/hr/reports", icon: BarChart3 },
@@ -564,17 +576,17 @@ export function Sidebar({ session }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
-  const [branding, setBranding] = useState<PortalBranding | null>(() => {
+  const [branding, setBranding] = useState<PortalBranding | null>(null);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
         const cached = window.localStorage.getItem('portal-branding');
-        if (cached) return JSON.parse(cached);
+        if (cached) {
+          setBranding(JSON.parse(cached));
+        }
       } catch {}
     }
-    return null;
-  });
-
-  useEffect(() => {
     getPortalBranding().then(b => {
       setBranding(b);
       try { window.localStorage.setItem('portal-branding', JSON.stringify(b)); } catch {}
@@ -589,8 +601,20 @@ export function Sidebar({ session }: SidebarProps) {
   useEffect(() => {
     window.localStorage.setItem("sidebar-collapsed", String(collapsed));
   }, [collapsed]);
-
-  const sections = session ? NAV_BY_ROLE[session.role] || [] : [];
+  const baseSections = session ? NAV_BY_ROLE[session.role] || [] : [];
+  const sections: NavSection[] = session && session.role !== 'patient'
+    ? [
+        ...baseSections,
+        {
+          title: "Self Service",
+          items: [
+            { label: "My Attendance", href: "/ess/attendance", icon: CalendarDays },
+            { label: "My Regularizations", href: "/ess/regularizations", icon: ClipboardList },
+            { label: "Web Punch", href: "/ess/punch", icon: Clock },
+          ] as NavItem[],
+        }
+      ]
+    : baseSections;
   const orgName = session?.organization_name || "Hospital OS";
 
   const allHrefs = sections.flatMap((s) => s.items.map((i) => i.href));
@@ -719,27 +743,49 @@ export function Sidebar({ session }: SidebarProps) {
                 const Icon = item.icon;
                 const active = isActive(item.href);
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    title={collapsed ? item.label : undefined}
-                    className={`flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-medium transition-all duration-150 ${active
-                      ? "text-white"
-                      : "text-gray-400 hover:text-gray-200 hover:bg-white/[0.06]"
-                      } ${collapsed ? "justify-center px-2" : ""}`}
-                    style={
-                      active
-                        ? {
-                          backgroundColor: "var(--admin-primary-20)",
-                          color: "var(--admin-primary-light)",
-                        }
-                        : undefined
-                    }
-                  >
-                    <Icon className={`h-[16px] w-[16px] shrink-0 ${active ? "" : "opacity-70"}`} />
-                    {!collapsed && <span className="truncate">{item.label}</span>}
-                  </Link>
+                  <React.Fragment key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={() => setMobileOpen(false)}
+                      title={collapsed ? item.label : undefined}
+                      className={`flex items-center gap-2.5 px-2.5 py-[7px] rounded-lg text-[13px] font-medium transition-all duration-150 ${active
+                        ? "text-white"
+                        : "text-gray-400 hover:text-gray-200 hover:bg-white/[0.06]"
+                        } ${collapsed ? "justify-center px-2" : ""}`}
+                      style={
+                        active
+                          ? {
+                            backgroundColor: "var(--admin-primary-20)",
+                            color: "var(--admin-primary-light)",
+                          }
+                          : undefined
+                      }
+                    >
+                      <Icon className={`h-[16px] w-[16px] shrink-0 ${active ? "" : "opacity-70"}`} />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                    </Link>
+                    {!collapsed && item.subItems && (
+                      <div className="pl-5 mt-0.5 space-y-0.5 border-l border-gray-800/40 ml-4 mb-2">
+                        {item.subItems.map((sub) => {
+                          const subActive = pathname === sub.href;
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={() => setMobileOpen(false)}
+                              className={`flex items-center px-3 py-1 rounded-[6px] text-[11px] font-semibold transition-all duration-150 ${
+                                subActive
+                                  ? "text-white bg-white/[0.06]"
+                                  : "text-gray-500 hover:text-gray-300 hover:bg-white/[0.02]"
+                              }`}
+                            >
+                              <span className="truncate">{sub.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </div>
