@@ -9,6 +9,10 @@ datasource db {
 }
 
 model Organization {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id         String   @id @default(uuid())
   name       String
   slug       String   @unique
@@ -170,7 +174,11 @@ model Organization {
   // GAP 6 — 14-Tab IPD EMR
   clinical_orders                ClinicalOrder[]
   physician_orders               PhysicianOrder[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id                             String                        @id @default(uuid())
   name                           String
   slug                           String                        @unique
@@ -218,6 +226,7 @@ model Organization {
   patient_engagements            PatientEngagement[]
   patient_movements              PatientMovement[]
   registration_field_configs     RegistrationFieldConfig[]
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
   active_medications             ActiveMedication[]
   admission_consultants          AdmissionConsultant[]
   admissions                     admissions[]
@@ -386,16 +395,25 @@ model Branch {
   latitude       Float?
   longitude      Float?
   organizationId String
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
   stores       Store[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   created_at     DateTime     @default(now())
   updated_at     DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id])
   stores         stores[]
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@map("branches")
@@ -586,6 +604,10 @@ model User {
   phone                    String?
   assigned_ward_id         Int?
   organizationId           String
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   is_active                Boolean  @default(true)
   working_hours            String   @default("09:00-17:00")
   slot_duration            Int      @default(20)
@@ -614,7 +636,11 @@ model User {
   incharge_stores   Store[]
   transfers_dispatched StockTransfer[]  @relation("TransferDispatchUser")
   transfers_received   StockTransfer[]  @relation("TransferReceiveUser")
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   is_active                Boolean                 @default(true)
   createdAt                DateTime                @default(now())
   slot_duration            Int                     @default(20)
@@ -646,6 +672,7 @@ model User {
   stock_issues             stock_issues[]
   stores                   stores[]
   organization             Organization            @relation(fields: [organizationId], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@index([doctor_group_id])
@@ -1097,6 +1124,10 @@ model admissions {
   isolation_type            String?
   medication_reconciliation Json?
   news_score_latest         Int?
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   attending_doctor_id       String? // FK to doctor user
   admission_source          String? // OPD | Emergency | Transfer | DirectAdmit
   discharge_type            String? // Normal | LAMA | DAMA | Absconded | Death | Transfer
@@ -1139,7 +1170,11 @@ model admissions {
   insurance_preauths     InsurancePreAuth[]
   inventory_movements    InventoryMovement[]
   indents                Indent[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   patient_class             String?
   pressure_ulcer_risk       Int?
   primary_diagnosis_icd     String?
@@ -1170,6 +1205,7 @@ model admissions {
   nursing_tasks             NursingTask[]
   tally_exports             TallyExport[]
   ward_rounds               WardRound[]
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@index([status])
@@ -1393,18 +1429,27 @@ model charge_catalog {
   department       String?
   is_active        Boolean      @default(true)
   organizationId   String
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
   items        ItemMaster[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   created_at       DateTime     @default(now())
   updated_at       DateTime     @updatedAt
   hsn_sac_code     String?
   service_category String?
   tax_rate         Decimal?
   organization     Organization @relation(fields: [organizationId], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
 }
@@ -1825,6 +1870,10 @@ model PharmacySupplier {
 }
 
 model PurchaseOrder {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id             Int       @id @default(autoincrement())
   po_number      String    @unique
   supplier_id    Int?
@@ -1850,7 +1899,11 @@ model PurchaseOrder {
   items                PurchaseOrderItem[]
   grns                 GoodsReceiptNote[]
   purchase_invoices    PharmacyPurchaseInvoice[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id                Int                       @id @default(autoincrement())
   po_number         String                    @unique
   supplier_id       Int
@@ -1874,6 +1927,7 @@ model PurchaseOrder {
   stores            stores?                   @relation(fields: [receivingStoreId], references: [id])
   supplier          PharmacySupplier          @relation(fields: [supplier_id], references: [id])
   vendor            Vendor?                   @relation("VendorPurchaseOrders", fields: [vendor_id], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@index([vendor_id])
@@ -1892,17 +1946,26 @@ model PurchaseOrderItem {
   gst_rate          Float         @default(0)
   hsn_code          String?
   notes             String?
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   uom               String?
   conversion_to_base Float? @default(1.0)
 
   purchase_order PurchaseOrder @relation(fields: [po_id], references: [id])
   item           ItemMaster?   @relation(fields: [item_id], references: [id])
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   conversionToBase  Decimal?      @default(1)
   itemId            Int?
   uom               String?
   item_master       item_master?  @relation(fields: [itemId], references: [id])
   purchase_order    PurchaseOrder @relation(fields: [po_id], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([po_id])
   @@index([item_id])
@@ -1918,6 +1981,10 @@ model GoodsReceiptNote {
   remarks           String?
   total_amount      Float                      @default(0)
   organizationId    String
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   received_at       DateTime @default(now())
   created_at        DateTime @default(now())
   store_id          Int?
@@ -1930,7 +1997,11 @@ model GoodsReceiptNote {
   batches        pharmacy_batch_inventory[]
   items          GoodsReceiptNoteItem[]
   general_batches ItemBatch[]
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   received_at       DateTime                   @default(now())
   created_at        DateTime                   @default(now())
   rejected_quantity Int                        @default(0)
@@ -1943,6 +2014,7 @@ model GoodsReceiptNote {
   supplier          PharmacySupplier?          @relation(fields: [supplier_id], references: [id])
   vendor            Vendor?                    @relation("VendorGRNs", fields: [vendor_id], references: [id])
   batches           pharmacy_batch_inventory[]
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@index([po_id])
@@ -1952,6 +2024,10 @@ model GoodsReceiptNote {
 }
 
 model PharmacyReturn {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id               Int      @id @default(autoincrement())
   return_type      String   // patient_return, supplier_return, expired_stock, damage_writeoff
   medicine_id      Int?
@@ -1976,7 +2052,11 @@ model PharmacyReturn {
   organization Organization @relation(fields: [organizationId], references: [id])
   item         ItemMaster?  @relation(fields: [item_id], references: [id])
   store        Store?       @relation(fields: [store_id], references: [id])
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id                  Int          @id @default(autoincrement())
   return_type         String
   medicine_id         Int
@@ -1996,6 +2076,7 @@ model PharmacyReturn {
   unit_cost           Float?
   vendor_id           Int?
   organization        Organization @relation(fields: [organizationId], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([organizationId])
   @@index([return_type])
@@ -2595,11 +2676,19 @@ model Vendor {
   item_batches               item_batches[]
   item_vendors               item_vendors[]
   pharmacy_purchase_invoices PharmacyPurchaseInvoice[]
+<<<<<<< HEAD
   item_vendors             ItemVendor[]
   item_batches             ItemBatch[]
 
+=======
+<<<<<<< HEAD
+  item_vendors             ItemVendor[]
+  item_batches             ItemBatch[]
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   pharmacy_purchase_orders   PurchaseOrder[]           @relation("VendorPurchaseOrders")
   organization               Organization              @relation(fields: [organizationId], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@unique([vendor_code, organizationId])
   @@index([organizationId])
@@ -3413,11 +3502,20 @@ model GL_JournalEntry {
   reversal_entry         GL_JournalEntry?    @relation("JournalReversal", fields: [reversal_entry_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   reversed_by            GL_JournalEntry?    @relation("JournalReversal")
   lines                  GL_JournalLine[]
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   depreciation_entries   DepreciationEntry[]
   inventory_movements    InventoryMovement[]
   admissions             admissions?         @relation(fields: [admissionsAdmission_id], references: [admission_id])
   admissionsAdmission_id String?
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
 
   @@unique([journal_number, organizationId])
   @@index([organizationId])
@@ -4065,6 +4163,10 @@ model SurgeryConsumable {
   unit_price         Float?
   is_implant         Boolean        @default(false)
   batch_no           String?
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   serial_no          String? // for implants
   item_id            Int?
   store_id           Int?
@@ -4073,9 +4175,14 @@ model SurgeryConsumable {
   surgery SurgeryRequest @relation(fields: [surgery_request_id], references: [id], onDelete: Cascade)
   item    ItemMaster?    @relation(fields: [item_id], references: [id])
   store   Store?         @relation(fields: [store_id], references: [id])
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   serial_no          String?
   surgery            SurgeryRequest @relation(fields: [surgery_request_id], references: [id], onDelete: Cascade)
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([surgery_request_id])
   @@index([item_id])
@@ -4665,6 +4772,10 @@ model PharmacyPurchaseInvoice {
 }
 
 model PharmacyPurchaseInvoiceLine {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id              Int    @id @default(autoincrement())
   invoice_id      Int
   medicine_id     Int?
@@ -4683,7 +4794,11 @@ model PharmacyPurchaseInvoiceLine {
   invoice  PharmacyPurchaseInvoice  @relation(fields: [invoice_id], references: [id])
   medicine pharmacy_medicine_master? @relation(fields: [medicine_id], references: [id])
   item     ItemMaster?              @relation(fields: [item_id], references: [id])
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   id          Int                      @id @default(autoincrement())
   invoice_id  Int
   medicine_id Int
@@ -4699,6 +4814,7 @@ model PharmacyPurchaseInvoiceLine {
   hsn_code    String?
   invoice     PharmacyPurchaseInvoice  @relation(fields: [invoice_id], references: [id])
   medicine    pharmacy_medicine_master @relation(fields: [medicine_id], references: [id])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 
   @@index([invoice_id])
   @@index([item_id])
@@ -4722,9 +4838,16 @@ model DispenseAllocation {
   @@map("dispense_allocations")
 }
 
+<<<<<<< HEAD
 // =================================
 // MODULE — General Inventory & Materials Management
 // =================================
+=======
+<<<<<<< HEAD
+// ========================================
+// MODULE — General Inventory & Materials Management
+// ========================================
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
 
 model ItemCategory {
   id                      Int          @id @default(autoincrement())
@@ -5225,7 +5348,11 @@ model GoodsReceiptNoteItem {
 
   @@index([grn_id])
   @@map("goods_receipt_note_items")
+<<<<<<< HEAD
 
+=======
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
 model ReportJob {
   id             String       @id @default(uuid())
   job_number     Int          @default(autoincrement())
@@ -5706,4 +5833,5 @@ model stores {
 
   @@unique([storeCode, organizationId])
   @@index([organizationId])
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
 }

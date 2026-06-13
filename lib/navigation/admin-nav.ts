@@ -4,9 +4,18 @@ import {
     Users, UserCog, Building2, ShieldCheck, UserRound,
     Settings, Palette, FileText, Bell, Plug, Clock, BarChart3, Lock,
     Workflow, Scissors, GitBranch, DatabaseBackup, BookOpen, Database,
-    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList, CalendarDays, Repeat, Calendar,
+<<<<<<< HEAD
+    ShieldAlert, Scale, Siren, SlidersHorizontal,
     Package, ArrowLeftRight, ClipboardList, ClipboardCheck, ListOrdered,
     ShoppingCart, Landmark, PieChart,
+=======
+    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList, CalendarDays, Repeat, Calendar,
+<<<<<<< HEAD
+    Package, ArrowLeftRight, ClipboardList, ClipboardCheck, ListOrdered,
+    ShoppingCart, Landmark, PieChart,
+=======
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
     type LucideIcon,
 } from 'lucide-react';
 

@@ -1,10 +1,18 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
+<<<<<<< HEAD
 import { listItems, listItemCategories, approveItem, discontinueItem, createItem, createItemCategory } from '@/app/actions/item-master-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
 import {
   Search, Plus, Filter, Package, CheckCircle, XCircle,
   ChevronLeft, ChevronRight, Edit, RefreshCw, Download, X, AlertCircle
+=======
+import { listItems, listItemCategories, approveItem, discontinueItem } from '@/app/actions/item-master-actions';
+import { AdminPage } from '@/app/admin/components/AdminPage';
+import {
+  Search, Plus, Filter, Package, CheckCircle, XCircle,
+  ChevronLeft, ChevronRight, Edit, RefreshCw, Download
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -18,6 +26,7 @@ const STATUS_COLORS: Record<string, string> = {
   Discontinued: 'bg-gray-100 text-gray-600 border-gray-200',
 };
 
+<<<<<<< HEAD
 const EMPTY_FORM = {
   item_code: '',
   name: '',
@@ -47,6 +56,8 @@ const EMPTY_FORM = {
   status: 'Active',
 };
 
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
 export default function ItemsPage() {
   const [items, setItems] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -62,6 +73,7 @@ export default function ItemsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
+<<<<<<< HEAD
   // New Item Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formData, setFormData] = useState({ ...EMPTY_FORM });
@@ -74,6 +86,8 @@ export default function ItemsPage() {
   const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [categoryError, setCategoryError] = useState('');
 
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   const load = useCallback(async () => {
     setLoading(true);
     const res = await listItems({
@@ -111,6 +125,7 @@ export default function ItemsPage() {
     setActionLoading(null);
   };
 
+<<<<<<< HEAD
   const handleCreateItem = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -168,6 +183,8 @@ export default function ItemsPage() {
     }
   };
 
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
   return (
     <AdminPage 
       pageTitle="Item Catalog" 
@@ -186,17 +203,29 @@ export default function ItemsPage() {
             <Filter className="h-4 w-4" />
             Filters
           </button>
+<<<<<<< HEAD
           <Link href="/admin/inventory/items/import"
+=======
+          <Link href="/inventory/items/import"
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
             className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm transition-colors">
             <Download className="h-4 w-4" />
             Import
           </Link>
+<<<<<<< HEAD
           <button
             onClick={() => { setFormData({ ...EMPTY_FORM }); setFormError(''); setShowCreateModal(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition-colors">
             <Plus className="h-4 w-4" />
             New Item
           </button>
+=======
+          <Link href="/inventory/items/new"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition-colors">
+            <Plus className="h-4 w-4" />
+            New Item
+          </Link>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
         </div>
       </div>
 
@@ -270,9 +299,15 @@ export default function ItemsPage() {
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-mono text-blue-600 text-xs">{item.item_code}</td>
                   <td className="px-4 py-3">
+<<<<<<< HEAD
                     <span className="text-gray-900 font-medium">
                       {item.name}
                     </span>
+=======
+                    <Link href={`/inventory/items/${item.id}`} className="text-gray-900 hover:text-blue-600 font-medium transition-colors">
+                      {item.name}
+                    </Link>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     {item.is_cold_chain && <span className="ml-1 text-xs text-cyan-600">❄</span>}
                     {item.is_batch_tracked && <span className="ml-1 text-xs text-amber-600">B</span>}
                   </td>
@@ -298,6 +333,13 @@ export default function ItemsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+<<<<<<< HEAD
+=======
+                      <Link href={`/inventory/items/${item.id}/edit`}
+                        className="p-1 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Link>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                       {item.status === 'Draft' && (
                         <button onClick={() => handleApprove(item.id)} disabled={actionLoading === item.id}
                           className="p-1 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
@@ -335,6 +377,7 @@ export default function ItemsPage() {
           </div>
         )}
       </div>
+<<<<<<< HEAD
 
       {/* New Item Modal */}
       {showCreateModal && (
@@ -534,6 +577,8 @@ export default function ItemsPage() {
           </div>
         </div>
       )}
+=======
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
     </AdminPage>
   );
 }

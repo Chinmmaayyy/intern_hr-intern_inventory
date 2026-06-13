@@ -127,7 +127,11 @@ export default function ReportsPage() {
                         <div className="text-[10px] text-gray-500">Batch: {x.batch_no}</div>
                       </td>
                       <td className="py-2.5 px-3 font-medium text-amber-600">{new Date(x.expiry_date).toLocaleDateString()}</td>
+<<<<<<< HEAD
                       <td className="py-2.5 px-3 text-right font-bold text-gray-900">{x.total_qty}</td>
+=======
+                      <td className="py-2.5 px-3 text-right font-bold text-gray-900">{x.quantity_on_hand}</td>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     </tr>
                   ))
                 )}
@@ -163,11 +167,19 @@ export default function ReportsPage() {
                   slowMoving.map((x, idx) => (
                     <tr key={idx} className="hover:bg-gray-50">
                       <td className="py-2.5 px-3">
+<<<<<<< HEAD
                         <div className="font-semibold text-gray-900">{x.item_name}</div>
                         <div className="text-[10px] text-gray-500">Code: {x.item_code} | Store: {x.store}</div>
                       </td>
                       <td className="py-2.5 px-3 text-right font-medium text-gray-900">{x.quantity_on_hand}</td>
                       <td className="py-2.5 px-3 text-right font-semibold text-indigo-600">₹{Number(x.stock_value || 0).toFixed(2)}</td>
+=======
+                        <div className="font-semibold text-gray-900">{x.name}</div>
+                        <div className="text-[10px] text-gray-500">Code: {x.item_code} | UOM: {x.base_uom}</div>
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-medium text-gray-900">{x.total_stock}</td>
+                      <td className="py-2.5 px-3 text-right font-semibold text-indigo-600">₹{Number(x.std_purchase_price).toFixed(2)}</td>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     </tr>
                   ))
                 )}

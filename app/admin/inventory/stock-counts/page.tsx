@@ -152,8 +152,14 @@ export default function StockCountsPage() {
             className="bg-white border border-gray-200 rounded-lg text-sm text-gray-700 px-3 py-2 focus:outline-none focus:border-indigo-500 w-full md:w-44"
           >
             <option value="">All Statuses</option>
+<<<<<<< HEAD
             <option value="Counting">Counting (In Progress)</option>
             <option value="Posted">Posted</option>
+=======
+            <option value="Draft">Draft (Counting)</option>
+            <option value="Completed">Completed</option>
+            <option value="Reconciled">Reconciled</option>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
           </select>
 
           <button
@@ -196,17 +202,29 @@ export default function StockCountsPage() {
                   <td className="py-3.5 px-4 font-semibold text-gray-900">{sess.store?.name}</td>
                   <td className="py-3.5 px-4">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+<<<<<<< HEAD
                       sess.status === 'Counting' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
                       sess.status === 'Posted' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
                       'bg-amber-100 text-amber-700 border border-amber-200'
                     }`}>
                       {sess.status === 'Counting' ? 'Counting' : sess.status}
+=======
+                      sess.status === 'Draft' ? 'bg-indigo-100 text-indigo-700 border border-indigo-200' :
+                      sess.status === 'Completed' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                      'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      {sess.status === 'Draft' ? 'Counting' : sess.status}
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-gray-500">
                     {new Date(sess.created_at).toLocaleDateString()}
                   </td>
+<<<<<<< HEAD
                   <td className="py-3.5 px-4 text-gray-500 max-w-xs truncate">—</td>
+=======
+                  <td className="py-3.5 px-4 text-gray-500 max-w-xs truncate">{sess.notes || '—'}</td>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                   <td className="py-3.5 px-4 text-center">
                     <button
                       onClick={() => handleViewSession(sess)}
@@ -298,7 +316,11 @@ export default function StockCountsPage() {
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   Physical Audit: <span className="text-indigo-600 font-mono">#AUD-{selectedSession.id}</span>
                 </h2>
+<<<<<<< HEAD
                 <p className="text-xs text-gray-500 mt-0.5">Location: {selectedSession.store?.name}</p>
+=======
+                <p className="text-xs text-gray-500 mt-0.5">Location: {selectedSession.store?.name} | Created by: {selectedSession.created_by_user?.name || 'Manager'}</p>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
               </div>
               <button onClick={() => setShowViewModal(false)} className="text-gray-500 hover:text-gray-900 transition">
                 <X size={20} />
@@ -309,8 +331,13 @@ export default function StockCountsPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 bg-gray-50 border border-gray-200 rounded-lg text-xs gap-4 mb-6">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-gray-500">
                 <div>
+<<<<<<< HEAD
                   <span className="block text-[10px] text-gray-500 uppercase font-bold">Session ID</span>
                   <span className="font-semibold text-gray-900">#{selectedSession.session_number || selectedSession.id}</span>
+=======
+                  <span className="block text-[10px] text-gray-500 uppercase font-bold">Scope / Notes</span>
+                  <span className="font-semibold text-gray-900">{selectedSession.notes || 'No notes'}</span>
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                 </div>
                 <div>
                   <span className="block text-[10px] text-gray-500 uppercase font-bold">Created Date</span>
@@ -318,13 +345,22 @@ export default function StockCountsPage() {
                 </div>
                 <div>
                   <span className="block text-[10px] text-gray-500 uppercase font-bold">Status</span>
+<<<<<<< HEAD
                   <span className={`font-semibold ${selectedSession.status === 'Counting' ? 'text-indigo-600' : 'text-emerald-600'}`}>
                     {selectedSession.status === 'Counting' ? 'Counting In Progress' : selectedSession.status}
+=======
+                  <span className={`font-semibold ${selectedSession.status === 'Draft' ? 'text-indigo-600' : 'text-emerald-600'}`}>
+                    {selectedSession.status === 'Draft' ? 'Counting In Progress' : selectedSession.status}
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                   </span>
                 </div>
               </div>
 
+<<<<<<< HEAD
               {selectedSession.status === 'Counting' && (
+=======
+              {selectedSession.status === 'Draft' && (
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                 <button
                   onClick={handleReconcileAndAdjust}
                   disabled={adjusting}
@@ -348,15 +384,24 @@ export default function StockCountsPage() {
                       <th className="py-2.5 px-3 text-right">System Qty</th>
                       <th className="py-2.5 px-3 text-right">Counted Qty</th>
                       <th className="py-2.5 px-3 text-right">Variance</th>
+<<<<<<< HEAD
                       {selectedSession.status === 'Counting' && (
+=======
+                      {selectedSession.status === 'Draft' && (
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                         <th className="py-2.5 px-3 text-center w-40">Edit Count</th>
                       )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 text-gray-700">
                     {selectedSession.lines?.map((line: any) => {
+<<<<<<< HEAD
                       const systemQty = Number(line.book_qty);
                       const countedQty = Number(line.counted_qty ?? systemQty);
+=======
+                      const systemQty = Number(line.system_quantity);
+                      const countedQty = Number(line.recorded_quantity ?? systemQty);
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                       const variance = countedQty - systemQty;
 
                       return (
@@ -369,7 +414,11 @@ export default function StockCountsPage() {
                           </td>
                           <td className="py-3 px-3 text-right text-gray-500">{systemQty}</td>
                           <td className="py-3 px-3 text-right font-medium text-gray-900">
+<<<<<<< HEAD
                             {line.counted_qty === null ? <span className="text-gray-400">Uncounted</span> : countedQty}
+=======
+                            {line.recorded_quantity === null ? <span className="text-gray-400">Uncounted</span> : countedQty}
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                           </td>
                           <td className="py-3 px-3 text-right font-bold">
                             {variance === 0 ? (
@@ -380,7 +429,11 @@ export default function StockCountsPage() {
                               <span className="text-rose-600">{variance}</span>
                             )}
                           </td>
+<<<<<<< HEAD
                           {selectedSession.status === 'Counting' && (
+=======
+                          {selectedSession.status === 'Draft' && (
+>>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                             <td className="py-3 px-3 text-center">
                               <div className="flex items-center gap-1.5 justify-center">
                                 <input
