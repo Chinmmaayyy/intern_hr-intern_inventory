@@ -271,15 +271,32 @@ export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
 
             {/* ── Category grid OR empty state ─────────────────────────────── */}
             {hasResults ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
-                    {filteredCategories.map(([category, reports]) => (
-                        <CategoryCard
-                            key={category}
-                            category={category}
-                            reports={reports}
-                            isSearching={isSearching}
-                        />
-                    ))}
+                <div className="space-y-8">
+                    {/* Top Section: Daily Revenue */}
+                    {filteredCategories.find(([cat]) => cat === 'Daily Revenue') && (
+                        <div>
+                            <CategoryCard
+                                category="Daily Revenue"
+                                reports={filteredCategories.find(([cat]) => cat === 'Daily Revenue')![1]}
+                                isSearching={isSearching}
+                            />
+                        </div>
+                    )}
+
+                    {/* Scrollable Horizontal Categories Row */}
+                    <div className="flex overflow-x-auto gap-5 pb-6 snap-x custom-scrollbar items-stretch">
+                        {filteredCategories
+                            .filter(([cat]) => cat !== 'Daily Revenue')
+                            .map(([category, reports]) => (
+                                <div key={category} className="w-[85vw] md:w-[350px] xl:w-[400px] shrink-0 snap-start">
+                                    <CategoryCard
+                                        category={category}
+                                        reports={reports}
+                                        isSearching={isSearching}
+                                    />
+                                </div>
+                            ))}
+                    </div>
                 </div>
             ) : (
                 <EmptySearchState query={query} onClear={() => setQuery('')} />
@@ -308,7 +325,7 @@ function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
                 shadow-sm hover:shadow-md
                 transition-all duration-200
                 ${styles.hover}
-                flex flex-col overflow-hidden
+                flex flex-col overflow-hidden h-full
             `}
         >
             {/* Card header */}
@@ -340,7 +357,7 @@ function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
             </div>
 
             {/* Report list */}
-            <ul className="flex-1 divide-y divide-gray-50" role="list">
+            <ul className="flex-1 divide-y divide-gray-50 overflow-y-auto max-h-[400px] scroll-smooth" role="list">
                 {reports.map((report) => (
                     <ReportRow
                         key={report.id}

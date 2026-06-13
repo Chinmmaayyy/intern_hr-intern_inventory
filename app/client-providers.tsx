@@ -1,12 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { ThemeProvider } from 'next-themes';
 import { ToastProvider } from '@/app/components/ui/Toast';
-
-const ThemeProvider = dynamic(
-  () => import('next-themes').then((m) => m.ThemeProvider),
-  { ssr: false }
-);
 
 const Toaster = dynamic(
   () => import('react-hot-toast').then((m) => m.Toaster),
