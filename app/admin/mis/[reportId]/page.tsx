@@ -46,7 +46,6 @@ interface PageProps {
     params: Promise<{ reportId: string }>;
     searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
-
 // ─── Dynamic metadata ─────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -105,9 +104,10 @@ function buildFilters(sp: { [key: string]: string | string[] | undefined }): Rec
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function DynamicReportPage({ params, searchParams }: PageProps) {
-    // Next.js Async Segments: Must await both params and searchParams
+    // Next.js explicitly demands we await these now
     const resolvedParams = await params;
     const resolvedSearchParams = await searchParams;
+
     const { reportId } = resolvedParams;
 
     // ── Step 1: Registry pre-flight check (no DB call) ──────────────────────

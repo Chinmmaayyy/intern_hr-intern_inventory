@@ -150,6 +150,9 @@ export async function getEmployeeDetail(id: number) {
         const employee = await db.employee.findUnique({
             where: { id },
             include: {
+                organization: true,
+                user: true,
+
                 attendances: {
                     orderBy: { date: 'desc' },
                     take: 30,
@@ -158,16 +161,24 @@ export async function getEmployeeDetail(id: number) {
                 leave_requests: {
                     orderBy: { created_at: 'desc' },
                     take: 10,
-                    include: { leave_type: true },
+                    include: {
+                        leave_type: true,
+                    },
                 },
 
                 shift_assignments: {
                     orderBy: { date: 'desc' },
                     take: 14,
-                    include: { shift_pattern: true },
+                    include: {
+                        shift_pattern: true,
+                    },
                 },
 
-                documents: true,
+                documents: {
+                    orderBy: {
+                        validTo: 'asc',
+                    },
+                },
             },
         });
 
@@ -193,15 +204,24 @@ export async function createEmployee(data: {
     employmentType?: string;
     branchId?: string;
     gradeBand?: string;
+    reportingManagerId?: number;
     workLocation?: string;
     bloodGroup?: string;
     emergencyContact?: string;
 
     panNumber?: string;
-    aadhaarMasked?: string;
+    aadhaarMasked: string;
     uanNumber?: string;
     pfNumber?: string;
     esicNumber?: string;
+
+    dateOfConfirmation?: string;
+    dateOfExit?: string;
+    exitReason?: string;
+
+    bankAccount?: string;
+    bankIfsc?: string;
+    bankName?: string;
 
     paymentMode?: string;
 }) {
@@ -228,6 +248,7 @@ export async function createEmployee(data: {
                 employment_type: data.employmentType,
                 branch_id: data.branchId,
                 grade_band: data.gradeBand,
+                reporting_manager_id: data.reportingManagerId,
                 work_location: data.workLocation,
                 blood_group: data.bloodGroup,
                 emergency_contact: data.emergencyContact,
@@ -237,6 +258,18 @@ export async function createEmployee(data: {
                 uan_number: data.uanNumber,
                 pf_number: data.pfNumber,
                 esic_number: data.esicNumber,
+
+                date_of_confirmation: data.dateOfConfirmation
+                    ? new Date(data.dateOfConfirmation)
+                    : null,
+                date_of_exit: data.dateOfExit
+                    ? new Date(data.dateOfExit)
+                    : null,
+                exit_reason: data.exitReason,
+
+                bank_account_enc: data.bankAccount,
+                bank_ifsc_enc: data.bankIfsc,
+                bank_name_enc: data.bankName,
 
                 payment_mode: data.paymentMode as any,
             },
@@ -258,6 +291,33 @@ export async function updateEmployee(id: number, data: {
     phone?: string;
     email?: string;
     isActive?: boolean;
+
+    employmentType?: string;
+    branchId?: string;
+    gradeBand?: string;
+    reportingManagerId?: number;
+
+    dateOfConfirmation?: string;
+    dateOfExit?: string;
+    exitReason?: string;
+
+    workLocation?: string;
+    bloodGroup?: string;
+    emergencyContact?: string;
+
+    photoUrl?: string;
+
+    panNumber?: string;
+    aadhaarMasked?: string;
+    uanNumber?: string;
+    pfNumber?: string;
+    esicNumber?: string;
+
+    bankAccount?: string;
+    bankIfsc?: string;
+    bankName?: string;
+
+    paymentMode?: string;
 }) {
     try {
         const { db } = await requireTenantContext();
@@ -267,11 +327,48 @@ export async function updateEmployee(id: number, data: {
             data: {
                 name: data.name,
                 designation: data.designation,
-                department_id: data.departmentId,
+
                 salary_basic: data.salaryBasic,
                 phone: data.phone,
                 email: data.email,
-                is_active: data.isActive,
+
+                employment_type: data.employmentType,
+                branch_id: data.branchId,
+                grade_band: data.gradeBand,
+                reporting_manager_id: data.reportingManagerId,
+
+                date_of_confirmation: data.dateOfConfirmation
+                    ? new Date(data.dateOfConfirmation)
+                    : null,
+
+                date_of_exit: data.dateOfExit
+                    ? new Date(data.dateOfExit)
+                    : null,
+
+                exit_reason: data.exitReason,
+
+                work_location: data.workLocation,
+                blood_group: data.bloodGroup,
+                emergency_contact: data.emergencyContact,
+
+                photo_url: data.photoUrl,
+
+                pan_number: data.panNumber,
+                aadhaar_masked: data.aadhaarMasked,
+                uan_number: data.uanNumber,
+                pf_number: data.pfNumber,
+                esic_number: data.esicNumber,
+
+                bank_account_enc: data.bankAccount,
+                bank_ifsc_enc: data.bankIfsc,
+                bank_name_enc: data.bankName,
+
+                payment_mode: data.paymentMode,
+
+                is_active:
+                    data.isActive !== undefined
+                        ? data.isActive
+                        : undefined,
             },
         });
 
@@ -295,7 +392,7 @@ export async function createEmployeeDocument(data: {
     try {
         const { db } = await requireTenantContext();
 
-        await db.employeeDocument.create({
+        const document = await db.employeeDocument.create({
             data: {
                 employeeId: data.employeeId,
                 documentType: data.documentType,
@@ -303,20 +400,26 @@ export async function createEmployeeDocument(data: {
                 issuingAuthority: data.issuingAuthority,
                 validFrom: data.validFrom
                     ? new Date(data.validFrom)
-                    : undefined,
+                    : null,
                 validTo: data.validTo
                     ? new Date(data.validTo)
-                    : undefined,
+                    : null,
                 fileUrl: data.fileUrl,
             },
         });
 
-        return { success: true };
+        revalidatePath('/hr/employees');
+
+        return {
+            success: true,
+            data: document,
+        };
     } catch (error) {
-        console.error("Create Employee Document Error:", error);
+        console.error(error);
+
         return {
             success: false,
-            error: "Failed to create document",
+            error: 'Failed to create document',
         };
     }
 }
