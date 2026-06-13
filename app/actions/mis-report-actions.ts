@@ -62,6 +62,98 @@ import {
   revenueBillingCategoryWiseReport,
   revenueWardWiseReport
 } from '@/lib/mis/registry/revenue';
+import {
+  preRegistrationReport,
+  registrationConvertReport,
+  registrationReport,
+  appointmentReport,
+  doctorEventOffReport,
+  doctorEventOffSummaryReport,
+  appointmentTatReport,
+  doctorFootfallReport,
+  ipPatientReport,
+  ipConversionReport,
+  ipCancelReport,
+  ipDischargeReport,
+  erToIpConversionReport,
+  bedStatusReport,
+  admissionsListReport,
+  emergencyAdmissionsReport,
+  bedOccupancyReport,
+  emergencyDischargeReport,
+  bedTransferReport,
+  doctorTransferReport,
+  expiredPatientsReport,
+  counsellingSummaryReport,
+  dischargeTatReport
+} from '@/lib/mis/registry/frontdesk';
+import {
+  diagCardiologyAppointmentReport,
+  diagNeurologyAppointmentReport,
+  diagNuclearMedicineAppointmentReport,
+  diagPathologyAppointmentReport,
+  diagPulmonologyAppointmentReport,
+  diagRadiologyAppointmentReport,
+  diagCardiologyServiceReport,
+  diagNeurologyServiceReport,
+  diagPulmonologyServiceReport,
+  diagPathologyServiceReport,
+  diagTatReport,
+  diagPathologyTatReport,
+  diagRadiologyTatReport
+} from '@/lib/mis/registry/diagnostic';
+import {
+  pharmacyIpIssueReport,
+  pharmacyIpItemDetailReport,
+  pharmacyOpItemDetailReport,
+  pharmacyOpSummaryDetailReport,
+  pharmacyIpDailyReport,
+  pharmacyDailyIpReturnReport,
+  pharmacyDailyIpIssueReport,
+  pharmacyOpTaxSummaryReport,
+  pharmacyOpTaxDetailsReport,
+  pharmacyIpIssueWithTagsReport,
+  pharmacyOpSaleWithTagsReport,
+  pharmacyItemReorderLevelReport,
+  pharmacySupplierListReport,
+  pharmacyCurrentStockReport,
+  pharmacyExpiryReport,
+  pharmacyDoctorWiseSaleReport,
+  pharmacyPatientPullOffReport,
+  pharmacyDoctorPullOffReport,
+  pharmacyIpPullOffReport
+} from '@/lib/mis/registry/pharmacy';
+import {
+  inventoryStockReport,
+  inventoryItemWiseStockReport,
+  inventoryGrnSummaryReport,
+  inventoryGrnReturnSummaryReport,
+  inventoryItemMasterReport,
+  inventoryGrnDetailReport,
+  inventoryGrnReturnDetailReport,
+  inventoryStoreToStoreIssueReport,
+  inventoryBatchInflowOutflowReport,
+  inventoryAsOnDateStockReport,
+  inventoryHsnTaxSummaryReport,
+  inventoryBinCardBatchReport,
+  inventoryBinCardItemReport,
+  inventoryMovingItemsReport,
+  inventoryGrnPendingCnReport,
+  inventoryStoreConsumptionReport
+} from '@/lib/mis/registry/inventory';
+import {
+  otBookingDetailsReport,
+  otSurgeryDetailsReport,
+  otSurgeryTatReport,
+  ambulanceOrdersReport,
+  ambulanceRequestReport,
+  ambulanceTatReport,
+  opticalItemBillingReport,
+  opticalProductBillingReport,
+  opticalDailySettlementReport,
+  opticalDailySettlementSumReport,
+  opticalPaymentReport
+} from '@/lib/mis/registry/specialized';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
 import { GenerateReportResponse, JobStatusResponse, ExportExcelResponse } from '@/lib/mis/action-types';
 import { getMISPermissions, MISAccessDeniedError } from '@/lib/mis/rbac';
@@ -87,8 +179,8 @@ async function getSession() {
   if (!user) throw new Error('No users found in database for mock session');
 
   return {
-    orgId:       user.organizationId,
-    userId:      user.id,
+    orgId: user.organizationId,
+    userId: user.id,
     // `user.role` is the raw String from the DB (e.g. "admin", "doctor").
     // getMISPermissions() maps it to the correct MIS permission set, falling
     // back to `viewer` defaults for any unknown role string.
@@ -102,7 +194,6 @@ export async function listCatalogue() {
   const session = await getSession();
 
   const allReports = [
-    dailyRevenueReport,
     billingDetailReport,
     billingItemDetailReport,
     billingSummaryReport,
@@ -133,6 +224,88 @@ export async function listCatalogue() {
     revenueServiceTypeWiseReport,
     revenueBillingCategoryWiseReport,
     revenueWardWiseReport,
+    preRegistrationReport,
+    registrationConvertReport,
+    registrationReport,
+    appointmentReport,
+    doctorEventOffReport,
+    doctorEventOffSummaryReport,
+    appointmentTatReport,
+    doctorFootfallReport,
+    ipPatientReport,
+    ipConversionReport,
+    ipCancelReport,
+    ipDischargeReport,
+    erToIpConversionReport,
+    bedStatusReport,
+    admissionsListReport,
+    emergencyAdmissionsReport,
+    bedOccupancyReport,
+    emergencyDischargeReport,
+    bedTransferReport,
+    doctorTransferReport,
+    expiredPatientsReport,
+    counsellingSummaryReport,
+    dischargeTatReport,
+    diagCardiologyAppointmentReport,
+    diagNeurologyAppointmentReport,
+    diagNuclearMedicineAppointmentReport,
+    diagPathologyAppointmentReport,
+    diagPulmonologyAppointmentReport,
+    diagRadiologyAppointmentReport,
+    diagCardiologyServiceReport,
+    diagNeurologyServiceReport,
+    diagPulmonologyServiceReport,
+    diagPathologyServiceReport,
+    diagTatReport,
+    diagPathologyTatReport,
+    diagRadiologyTatReport,
+    pharmacyIpIssueReport,
+    pharmacyIpItemDetailReport,
+    pharmacyOpItemDetailReport,
+    pharmacyOpSummaryDetailReport,
+    pharmacyIpDailyReport,
+    pharmacyDailyIpReturnReport,
+    pharmacyDailyIpIssueReport,
+    pharmacyOpTaxSummaryReport,
+    pharmacyOpTaxDetailsReport,
+    pharmacyIpIssueWithTagsReport,
+    pharmacyOpSaleWithTagsReport,
+    pharmacyItemReorderLevelReport,
+    pharmacySupplierListReport,
+    pharmacyCurrentStockReport,
+    pharmacyExpiryReport,
+    pharmacyDoctorWiseSaleReport,
+    pharmacyPatientPullOffReport,
+    pharmacyDoctorPullOffReport,
+    pharmacyIpPullOffReport,
+    inventoryStockReport,
+    inventoryItemWiseStockReport,
+    inventoryGrnSummaryReport,
+    inventoryGrnReturnSummaryReport,
+    inventoryItemMasterReport,
+    inventoryGrnDetailReport,
+    inventoryGrnReturnDetailReport,
+    inventoryStoreToStoreIssueReport,
+    inventoryBatchInflowOutflowReport,
+    inventoryAsOnDateStockReport,
+    inventoryHsnTaxSummaryReport,
+    inventoryBinCardBatchReport,
+    inventoryBinCardItemReport,
+    inventoryMovingItemsReport,
+    inventoryGrnPendingCnReport,
+    inventoryStoreConsumptionReport,
+    otBookingDetailsReport,
+    otSurgeryDetailsReport,
+    otSurgeryTatReport,
+    ambulanceOrdersReport,
+    ambulanceRequestReport,
+    ambulanceTatReport,
+    opticalItemBillingReport,
+    opticalProductBillingReport,
+    opticalDailySettlementReport,
+    opticalDailySettlementSumReport,
+    opticalPaymentReport
   ];
 
   // Only surface reports the session's role can actually run.
@@ -211,12 +384,12 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   }
 
   return {
-    id:          job.id,
-    status:      job.status,
-    progress:    job.progress,
-    file_key:    job.file_key,
-    error:       job.error,
-    createdAt:   job.createdAt,
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    file_key: job.file_key,
+    error: job.error,
+    createdAt: job.createdAt,
     finished_at: job.finished_at,
   };
 }
@@ -225,18 +398,18 @@ export async function listJobs(): Promise<JobStatusResponse[]> {
   const session = await getSession();
 
   const jobs = await prisma.reportJob.findMany({
-    where:   { organizationId: session.orgId },
+    where: { organizationId: session.orgId },
     orderBy: { createdAt: 'desc' },
-    take:    20,
+    take: 20,
   });
 
   return jobs.map((job) => ({
-    id:          job.id,
-    status:      job.status,
-    progress:    job.progress,
-    file_key:    job.file_key,
-    error:       job.error,
-    createdAt:   job.createdAt,
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    file_key: job.file_key,
+    error: job.error,
+    createdAt: job.createdAt,
     finished_at: job.finished_at,
   }));
 }
@@ -294,12 +467,12 @@ export async function exportReportToExcel(
     // Prisma field names are exact — verified against schema.prisma in Phase 1.
     const job = await prisma.reportJob.create({
       data: {
-        report_id:      reportId,
-        filters_json:   (filters ?? {}) as any,
-        requested_by:   session.userId,
+        report_id: reportId,
+        filters_json: (filters ?? {}) as any,
+        requested_by: session.userId,
         organizationId: session.orgId,
-        format:         'Excel',
-        status:         'Queued',
+        format: 'Excel',
+        status: 'Queued',
       },
     });
     return { async: true, jobId: job.id };
@@ -308,18 +481,18 @@ export async function exportReportToExcel(
   // 4. Generate the Excel buffer.
   const buffer = await generateExcelBuffer(
     reportDef.columns,
-    result.rows   ?? [],
+    result.rows ?? [],
     result.totals ?? {}
   );
 
   // 5. Build a safe, date-stamped filename.
   const dateSuffix = new Date().toISOString().split('T')[0];
-  const safeName   = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
+  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
 
   // 6. Return Base64 — safe for Server Action serialisation.
   return {
-    async:    false,
-    base64:   buffer.toString('base64'),
+    async: false,
+    base64: buffer.toString('base64'),
     filename: `${safeName}_${dateSuffix}.xlsx`,
   };
 }
