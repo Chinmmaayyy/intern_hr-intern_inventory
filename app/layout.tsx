@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import Script from "next/script";
 import { DM_Sans, Playfair_Display } from "next/font/google";
 import { ClientProviders } from "@/app/client-providers";
@@ -32,8 +32,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${dmSans.variable} ${playfairDisplay.variable}`}>
-      <body className="font-sans antialiased">
+    <html lang="en" suppressHydrationWarning data-scroll-behavior="smooth" className={`${dmSans.variable} ${playfairDisplay.variable}`}>
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <ClientProviders>
             {children}
         </ClientProviders>
