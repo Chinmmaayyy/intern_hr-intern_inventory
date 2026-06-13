@@ -424,6 +424,48 @@ export async function createEmployeeDocument(data: {
     }
 }
 
+
+export async function getDoctorsWithoutEmployee() {
+    try {
+        const { db, organizationId } = await requireTenantContext();
+
+        const doctors = await db.user.findMany({
+            where: {
+                organizationId,
+                role: 'doctor',
+            },
+        });
+
+        const employees = await db.employee.findMany({
+            select: {
+                user_id: true,
+            },
+        });
+
+        const employeeUserIds = new Set(
+            employees
+                .map((e: any) => e.user_id)
+                .filter(Boolean)
+        );
+
+        const missingDoctors = doctors.filter(
+            (doctor: any) => !employeeUserIds.has(doctor.id)
+        );
+
+        return {
+            success: true,
+            data: missingDoctors,
+        };
+    } catch (error) {
+        console.error(error);
+
+        return {
+            success: false,
+            data: [],
+        };
+    }
+}
+
 // ========================================
 // ATTENDANCE
 // ========================================
