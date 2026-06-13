@@ -229,32 +229,18 @@ export default function IndentsListPage() {
                   <td className="py-3.5 px-4 font-mono font-bold text-indigo-600">{ind.indent_number}</td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
-<<<<<<< HEAD
-                      <span className="font-semibold text-gray-900">{ind.from_store?.name}</span>
-                      <ArrowRightLeft size={12} className="text-gray-400" />
-                      <span className="text-gray-500">{ind.to_store?.name}</span>
-=======
                       <span className="font-semibold text-gray-900">{ind.requesting_store?.name}</span>
                       <ArrowRightLeft size={12} className="text-gray-400" />
                       <span className="text-gray-500">{ind.supplying_store?.name}</span>
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     </div>
                   </td>
                   <td className="py-3.5 px-4">
                     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
-<<<<<<< HEAD
-                      ind.priority === 'NORMAL' ? 'bg-blue-100 text-blue-700' :
-                      ind.priority === 'URGENT' ? 'bg-amber-100 text-amber-700' :
-                      'bg-rose-100 text-rose-700 font-bold'
-                    }`}>
-                      {ind.priority === 'NORMAL' ? 'Routine' : ind.priority === 'URGENT' ? 'Urgent' : 'Emergency'}
-=======
                       ind.urgency === 'Routine' ? 'bg-blue-100 text-blue-700' :
                       ind.urgency === 'Urgent' ? 'bg-amber-100 text-amber-700' :
                       'bg-rose-100 text-rose-700 font-bold'
                     }`}>
                       {ind.urgency}
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                     </span>
                   </td>
                   <td className="py-3.5 px-4">
@@ -450,15 +436,9 @@ export default function IndentsListPage() {
             <div className="flex justify-between items-center mb-5">
               <div>
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-<<<<<<< HEAD
-                   Indent Request: <span className="text-indigo-600 font-mono">{selectedIndent.indent_number}</span>
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">Priority: {selectedIndent.priority === 'NORMAL' ? 'Routine' : selectedIndent.priority === 'URGENT' ? 'Urgent' : 'Emergency'}</p>
-=======
                   Indent Request: <span className="text-indigo-600 font-mono">{selectedIndent.indent_number}</span>
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">Raised by: {selectedIndent.raised_by_user?.name || 'Automated'}</p>
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
               </div>
               <button onClick={() => setShowViewModal(false)} className="text-gray-500 hover:text-gray-900 transition">
                 <X size={20} />
@@ -469,17 +449,6 @@ export default function IndentsListPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 p-4 border border-gray-200 rounded-lg text-xs text-gray-700 mb-6">
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Req. Store</span>
-<<<<<<< HEAD
-                <span className="font-semibold text-gray-900">{selectedIndent.from_store?.name}</span>
-              </div>
-              <div>
-                <span className="block text-[10px] text-gray-500 uppercase font-bold">Supplying Store</span>
-                <span className="font-semibold text-gray-900">{selectedIndent.to_store?.name}</span>
-              </div>
-              <div>
-                <span className="block text-[10px] text-gray-500 uppercase font-bold">Priority</span>
-                <span className="font-semibold text-gray-900">{selectedIndent.priority === 'NORMAL' ? 'Routine' : selectedIndent.priority === 'URGENT' ? 'Urgent' : 'Emergency'}</span>
-=======
                 <span className="font-semibold text-gray-900">{selectedIndent.requesting_store?.name}</span>
               </div>
               <div>
@@ -489,7 +458,6 @@ export default function IndentsListPage() {
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Urgency</span>
                 <span className="font-semibold text-gray-900">{selectedIndent.urgency}</span>
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
               </div>
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Current Status</span>
@@ -516,24 +484,15 @@ export default function IndentsListPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-200 text-gray-700">
                     {selectedIndent.items?.map((item: any) => {
-<<<<<<< HEAD
-                      const pending = item.qty_requested - (item.qty_issued || 0);
-=======
                       const pending = item.quantity_requested - (item.quantity_issued || 0);
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                       return (
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="py-3 px-3">
                             <div className="font-semibold text-gray-900">{item.item?.name}</div>
                             <div className="text-[10px] text-gray-500">{item.item?.item_code} | UOM: {item.item?.base_uom}</div>
                           </td>
-<<<<<<< HEAD
-                          <td className="py-3 px-3 text-right font-medium text-gray-900">{item.qty_requested}</td>
-                          <td className="py-3 px-3 text-right text-gray-500">{item.qty_issued || 0}</td>
-=======
                           <td className="py-3 px-3 text-right font-medium text-gray-900">{item.quantity_requested}</td>
                           <td className="py-3 px-3 text-right text-gray-500">{item.quantity_issued || 0}</td>
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                           {['Submitted', 'Approved', 'Partially Issued'].includes(selectedIndent.status) && (
                             <td className="py-3 px-3 text-center">
                               {pending <= 0 ? (
@@ -546,18 +505,6 @@ export default function IndentsListPage() {
                                     type="number"
                                     min="1"
                                     max={pending}
-<<<<<<< HEAD
-                                    value={issueQtyMap[item.item_id] ?? ''}
-                                    onChange={(e) => setIssueQtyMap({ ...issueQtyMap, [item.item_id]: parseInt(e.target.value) || 0 })}
-                                    className="bg-white border border-gray-200 rounded px-1.5 py-1 text-center w-14 text-gray-900 text-xs"
-                                  />
-                                  <button
-                                    onClick={() => handleIssueItem(item.item_id)}
-                                    disabled={issuingLineId === item.item_id}
-                                    className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[10px] px-2.5 py-1.5 rounded transition disabled:opacity-50 cursor-pointer"
-                                  >
-                                    {issuingLineId === item.item_id ? 'Dispatching' : 'Dispatch'}
-=======
                                     value={issueQtyMap[item.id] || ''}
                                     onChange={(e) => setIssueQtyMap({ ...issueQtyMap, [item.id]: parseInt(e.target.value) || 0 })}
                                     className="bg-white border border-gray-200 rounded px-1.5 py-1 text-center w-14 text-gray-900 text-xs"
@@ -568,7 +515,6 @@ export default function IndentsListPage() {
                                     className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[10px] px-2.5 py-1.5 rounded transition disabled:opacity-50 cursor-pointer"
                                   >
                                     {issuingLineId === item.id ? 'Dispatching' : 'Dispatch'}
->>>>>>> ac65a1c0df7665e61b0298cf6a76384e7d1a588a
                                   </button>
                                 </div>
                               )}

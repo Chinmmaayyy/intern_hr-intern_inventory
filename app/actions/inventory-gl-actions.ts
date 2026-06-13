@@ -251,3 +251,113 @@ export async function postAdjustmentToGL({
     return { success: false, error: err.message };
   }
 }
+
+// ========================================
+// Post Write-Off to GL (expiry / damage)
+// Dr Shrinkage 8000 / Cr Inventory 1170
+// ========================================
+export async function postWriteOffToGL({
+  organizationId, item_id, quantity, unit_cost, source_id, reason,
+}: {
+  organizationId: string; item_id: number; quantity: number; unit_cost: number;
+  source_id: string; reason?: string;
+}) {
+  try {
+    const invAccount = await getGLAccount(organizationId, INV_ACCOUNT_CODE) ?? await getGLAccount(organizationId, PHARMACY_INV_CODE);
+    const shrinkageAccount = await getGLAccount(organizationId, SHRINKAGE_CODE);
+    if (!invAccount || !shrinkageAccount) return { success: false, error: 'GL accounts not found for write-off' };
+
+    const value = round2(quantity * unit_cost);
+    if (value <= 0) return { success: true, message: 'Zero-value write-off — no GL entry needed' };
+
+    const journalNumber = `JE-WO-${source_id}-${Date.now()}`;
+    const periodId = await getOpenPeriodId(organizationId);
+
+    const entry = await prisma.gL_JournalEntry.create({
+      data: {
+        journal_number: journalNumber,
+        organizationId,
+        entry_type: 'WriteOff',
+        entry_date: new Date(),
+        period_id: periodId,
+        narration: reason ?? `Inventory write-off - item ${item_id}`,
+        reference_type: 'WriteOff',
+        reference_id: source_id,
+        status: 'Posted',
+        total_debit: value,
+        total_credit: value,
+        lines: {
+          create: [
+            { line_number: 1, account_id: shrinkageAccount.id, debit_amount: value, credit_amount: 0, description: 'Inventory shrinkage/expiry loss', organizationId },
+            { line_number: 2, account_id: invAccount.id, debit_amount: 0, credit_amount: value, description: 'Inventory reduction', organizationId },
+          ],
+        },
+      },
+    });
+    return { success: true, journalId: entry.id };
+  } catch (e: unknown) {
+    const err = e as Error;
+    console.error('postWriteOffToGL error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// ========================================
+// Reconcile inventory sub-ledger to GL control accounts
+// ========================================
+export async function reconcileInventoryToGL(organizationId: string) {
+  try {
+    const stocks = await prisma.storeStock.findMany({
+      where: { organizationId },
+      include: { item: { include: { category: true } } },
+    });
+
+    let ledgerValue = 0;
+    for (const s of stocks) {
+      ledgerValue += s.quantity_on_hand * (s.avg_unit_cost || s.item.std_purchase_price || 0);
+    }
+    ledgerValue = round2(ledgerValue);
+
+    const invAccounts = await prisma.gL_Account.findMany({
+      where: {
+        organizationId,
+        is_active: true,
+        OR: [
+          { account_code: { in: [INV_ACCOUNT_CODE, PHARMACY_INV_CODE] } },
+          { account_name: { contains: 'Inventory', mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    let glBalance = 0;
+    for (const acct of invAccounts) {
+      const lines = await prisma.gL_JournalLine.findMany({
+        where: { account_id: acct.id, organizationId, journal: { status: { not: 'Reversed' } } },
+        select: { debit_amount: true, credit_amount: true },
+      });
+      for (const l of lines) {
+        glBalance += Number(l.debit_amount || 0) - Number(l.credit_amount || 0);
+      }
+    }
+    glBalance = round2(glBalance);
+
+    const unposted = await prisma.inventoryMovement.count({
+      where: { organizationId, gl_journal_id: null, movement_type: { not: 'OPENING' } },
+    });
+
+    return {
+      success: true,
+      data: {
+        ledger_value: ledgerValue,
+        gl_balance: glBalance,
+        variance: round2(ledgerValue - glBalance),
+        unposted_movements: unposted,
+        reconciled: Math.abs(ledgerValue - glBalance) < 0.01 && unposted === 0,
+      },
+    };
+  } catch (e: unknown) {
+    const err = e as Error;
+    console.error('reconcileInventoryToGL error:', err);
+    return { success: false, error: err.message };
+  }
+}

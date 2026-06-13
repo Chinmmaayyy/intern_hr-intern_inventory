@@ -11,6 +11,8 @@ export const metadata: Metadata = {
     description: 'Management Information System — daily revenue breakdown by doctor, department, and payer.',
 };
 
+export const dynamic = 'force-dynamic';
+
 // ─── Next.js 14: searchParams is a Promise ────────────────────────────────────
 // With strict:true the prop type MUST be Promise<...> and must be awaited before
 // reading individual keys. Passing it unsettled to a child is a type error.
