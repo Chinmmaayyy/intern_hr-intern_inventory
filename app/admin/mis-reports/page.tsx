@@ -4,6 +4,8 @@ import { AdminPage } from '@/app/admin/components/AdminPage';
 import { listCatalogue } from '@/app/actions/mis-report-actions';
 import { CatalogueShell, type CatalogueEntry } from '@/components/mis/CatalogueShell';
 
+export const dynamic = 'force-dynamic';
+
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export const metadata: Metadata = {
@@ -34,13 +36,13 @@ export const metadata: Metadata = {
  */
 function toSafeCatalogueEntry(raw: Record<string, unknown>): CatalogueEntry {
     return {
-        id:                 raw.id                  as string,
-        category:           raw.category             as string,
-        name:               raw.name                 as string,
-        description:        raw.description          as string,
-        requiredPermission: raw.requiredPermission    as string,
-        rowLimitSync:       raw.rowLimitSync          as number,
-        moduleFlag:         raw.moduleFlag            as string | undefined,
+        id: raw.id as string,
+        category: raw.category as string,
+        name: raw.name as string,
+        description: raw.description as string,
+        requiredPermission: raw.requiredPermission as string,
+        rowLimitSync: raw.rowLimitSync as number,
+        moduleFlag: raw.moduleFlag as string | undefined,
     };
 }
 

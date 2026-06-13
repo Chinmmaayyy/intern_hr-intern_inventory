@@ -43,10 +43,9 @@ import type { UniversalPayload } from '@/components/mis/UniversalReportShell';
 // ─── Route segment types (Next.js 14 — sync params/searchParams) ─────────────
 
 interface PageProps {
-    params: { reportId: string };
-    searchParams: { [key: string]: string | string[] | undefined };
+    params: Promise<{ reportId: string }>;
+    searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
-
 // ─── Dynamic metadata ─────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -82,7 +81,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
  * `branch_id` and `department_id` are forwarded as-is when present; they are
  * reserved for future multi-branch and department-level filter support.
  */
-function buildFilters(sp: PageProps['searchParams']): Record<string, string | undefined> {
+function buildFilters(sp: { [key: string]: string | string[] | undefined }): Record<string, string | undefined> {
     // Coerce string | string[] | undefined → string | undefined
     const raw = (key: string): string | undefined => {
         const v = sp[key];
@@ -105,9 +104,10 @@ function buildFilters(sp: PageProps['searchParams']): Record<string, string | un
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function DynamicReportPage({ params, searchParams }: PageProps) {
-    // Next.js Async Segments: Must await both params and searchParams
+    // Next.js explicitly demands we await these now
     const resolvedParams = await params;
     const resolvedSearchParams = await searchParams;
+
     const { reportId } = resolvedParams;
 
     // ── Step 1: Registry pre-flight check (no DB call) ──────────────────────
