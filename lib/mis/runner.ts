@@ -1,11 +1,77 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
-import { dailyRevenueReport } from './registry/billing';
+import { 
+  dailyRevenueReport,
+  billingDetailReport,
+  billingItemDetailReport,
+  billingSummaryReport,
+  billingSummaryDetailReport,
+  billingPaymentModeReport,
+  billingUhidAdvanceReport,
+  billingAdmissionAdvanceReport,
+  billingDiscountSummaryReport,
+  billingDueSettledReport,
+  billingRefundReport,
+  billingOpRefundReport,
+  billingDateWiseCashReport,
+  billingDoctorPayoutReport,
+  billingDoctorAccountPayableReport,
+  billingIpPackageReport,
+  billingHealthCheckupCountReport,
+  billingPayerAgreementExpiryReport,
+  billingDepositRefundReport,
+  billingPendingBillsReport,
+  billingPaymentServiceTypeReport,
+  billingPaymentSummaryReport,
+  billingRevenueSummaryReport,
+  billingCancelBillReport,
+  billingServiceTypeSummaryReport
+} from './registry/billing';
+import {
+  revenueDepartmentWiseReport,
+  revenuePayerTypeWiseReport,
+  revenuePayerNameWiseReport,
+  revenueServiceTypeWiseReport,
+  revenueBillingCategoryWiseReport,
+  revenueWardWiseReport
+} from './registry/revenue';
 import { ValidatedFilters } from './types';
 
 // Add all reports to this registry map
-export const REGISTRY: Record<string, typeof dailyRevenueReport> = {
+export const REGISTRY: Record<string, any> = {
   [dailyRevenueReport.id]: dailyRevenueReport,
+  [billingDetailReport.id]: billingDetailReport,
+  [billingItemDetailReport.id]: billingItemDetailReport,
+  [billingSummaryReport.id]: billingSummaryReport,
+  [billingSummaryDetailReport.id]: billingSummaryDetailReport,
+  [billingPaymentModeReport.id]: billingPaymentModeReport,
+  [billingUhidAdvanceReport.id]: billingUhidAdvanceReport,
+  [billingAdmissionAdvanceReport.id]: billingAdmissionAdvanceReport,
+  [billingDiscountSummaryReport.id]: billingDiscountSummaryReport,
+  [billingDueSettledReport.id]: billingDueSettledReport,
+  [billingRefundReport.id]: billingRefundReport,
+  [billingOpRefundReport.id]: billingOpRefundReport,
+  [billingDateWiseCashReport.id]: billingDateWiseCashReport,
+  [billingDoctorPayoutReport.id]: billingDoctorPayoutReport,
+  [billingDoctorAccountPayableReport.id]: billingDoctorAccountPayableReport,
+  [billingIpPackageReport.id]: billingIpPackageReport,
+  [billingHealthCheckupCountReport.id]: billingHealthCheckupCountReport,
+  [billingPayerAgreementExpiryReport.id]: billingPayerAgreementExpiryReport,
+  [billingDepositRefundReport.id]: billingDepositRefundReport,
+  [billingPendingBillsReport.id]: billingPendingBillsReport,
+  [billingPaymentServiceTypeReport.id]: billingPaymentServiceTypeReport,
+  [billingPaymentSummaryReport.id]: billingPaymentSummaryReport,
+  [billingRevenueSummaryReport.id]: billingRevenueSummaryReport,
+  [billingCancelBillReport.id]: billingCancelBillReport,
+  [billingServiceTypeSummaryReport.id]: billingServiceTypeSummaryReport,
+  [revenueDepartmentWiseReport.id]: revenueDepartmentWiseReport,
+  [revenuePayerTypeWiseReport.id]: revenuePayerTypeWiseReport,
+  [revenuePayerNameWiseReport.id]: revenuePayerNameWiseReport,
+  [revenueServiceTypeWiseReport.id]: revenueServiceTypeWiseReport,
+  [revenueBillingCategoryWiseReport.id]: revenueBillingCategoryWiseReport,
+  [revenueWardWiseReport.id]: revenueWardWiseReport,
 };
 
 export async function runReport(
