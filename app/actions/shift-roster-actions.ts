@@ -2,6 +2,7 @@
 
 import { requireRoleAndTenant, requireTenantContext } from '@/backend/tenant';
 import { revalidatePath } from 'next/cache';
+import { format, addDays } from 'date-fns';
 
 // ========================================
 // SHIFT PATTERNS
@@ -120,7 +121,7 @@ export async function bulkAssignRoster(data: {
             let consecutiveDays = 0;
             for(let i = 0; i < 6; i++) {
                 const checkDateStr = format(addDays(past6DaysStart, i), 'yyyy-MM-dd');
-                const hasShift = pastAssignments.some(a => format(new Date(a.date), 'yyyy-MM-dd') === checkDateStr);
+                const hasShift = pastAssignments.some((a: any) => format(new Date(a.date), 'yyyy-MM-dd') === checkDateStr);
                 if(hasShift) consecutiveDays++;
                 else consecutiveDays = 0; // reset if there's a gap
             }
@@ -277,7 +278,7 @@ export async function getSwapRequestsAdmin() {
             orderBy: { created_at: 'desc' }
         });
 
-        const enhancedRequests = await Promise.all(requests.map(async (req) => {
+        const enhancedRequests = await Promise.all(requests.map(async (req: any) => {
             const reqAssign = await db.shiftAssignment.findUnique({ 
                 where: { id: req.requester_assignment_id },
                 include: { employee: true, shift_pattern: true }
@@ -523,7 +524,7 @@ export async function getMySwapRequests(userId: string) {
             orderBy: { created_at: 'desc' }
         });
 
-        const enhancedRequests = await Promise.all(requests.map(async (req) => {
+        const enhancedRequests = await Promise.all(requests.map(async (req: any) => {
             const reqAssign = await db.shiftAssignment.findUnique({
                 where: { id: req.requester_assignment_id },
                 include: { employee: true, shift_pattern: true }
