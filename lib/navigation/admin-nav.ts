@@ -4,9 +4,13 @@ import {
     Users, UserCog, Building2, ShieldCheck, UserRound,
     Settings, Palette, FileText, Bell, Plug, Clock, BarChart3, Lock,
     Workflow, Scissors, GitBranch, DatabaseBackup, BookOpen, Database,
+<<<<<<< HEAD
     ShieldAlert, Scale, Siren, SlidersHorizontal,
     Package, ArrowLeftRight, ClipboardList, ClipboardCheck, ListOrdered,
     ShoppingCart, Landmark, PieChart,
+=======
+    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList, CalendarDays, Repeat, Calendar,
+>>>>>>> 58626468b555649f9a66f5e7d0acf47e87b54d6c
     type LucideIcon,
 } from 'lucide-react';
 
@@ -32,6 +36,13 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
         ],
     },
     {
+        title: 'Reports & MIS',
+        collapsible: true,
+        items: [
+            { label: 'Daily Revenue', href: '/admin/mis/revenue/daily', icon: LayoutList },
+        ],
+    },
+    {
         title: 'Modules',
         collapsible: true,
         items: [
@@ -51,6 +62,14 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
             { label: 'Operation Theatre', href: '/admin/ot/dashboard', icon: Scissors },
             { label: 'Emergency Room', href: '/admin/er/dashboard', icon: Siren },
             { label: 'Inventory', href: '/admin/inventory', icon: Package },
+        ],
+    },
+    {
+        title: 'Roster & Shifts',
+        collapsible: true,
+        items: [
+            { label: 'Roster Planner', href: '/admin/hr/roster', icon: CalendarDays },
+            { label: 'Shift Swaps', href: '/admin/hr/swaps', icon: Repeat },
         ],
     },
     {

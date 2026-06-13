@@ -3,9 +3,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { AppShell } from '@/app/components/layout/AppShell';
 import {
-    Clock, Loader2, CheckCircle2, XCircle, Users, Calendar
+    Clock, Loader2, CheckCircle2, XCircle, Users, Calendar,
+    UserCheck, FileText, Activity
 } from 'lucide-react';
 import { getAttendanceForDate, recordAttendance } from '@/app/actions/hr-actions';
+import { getHRAttendanceStatsAction } from '@/app/actions/attendance-actions';
+import Link from 'next/link';
 
 export default function HRAttendancePage() {
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -13,12 +16,19 @@ export default function HRAttendancePage() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [saving, setSaving] = useState<number | null>(null);
+    const [stats, setStats] = useState({ pendingRegularizations: 0, pendingOT: 0, manualEntriesCount: 0 });
 
     const loadData = useCallback(async () => {
         setRefreshing(true);
         try {
-            const res = await getAttendanceForDate(date);
+            const [res, statsRes] = await Promise.all([
+                getAttendanceForDate(date),
+                getHRAttendanceStatsAction()
+            ]);
             if (res.success) setRecords(res.data || []);
+            if (statsRes.success && statsRes.data) {
+                setStats(statsRes.data);
+            }
         } catch (e) { console.error(e); }
         finally { setRefreshing(false); setLoading(false); }
     }, [date]);
@@ -90,22 +100,49 @@ export default function HRAttendancePage() {
                 </div>
 
                 {/* Summary KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-4">
-                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Total</span>
-                        <p className="text-2xl font-black text-gray-900 mt-1">{records.length}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    {/* Present Today */}
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Present Today</p>
+                            <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-lime-600 text-white">
+                                <UserCheck className="h-4 w-4" />
+                            </div>
+                        </div>
+                        <p className="text-2xl font-black text-gray-900">{presentCount}</p>
                     </div>
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-4">
-                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Present</span>
-                        <p className="text-2xl font-black text-emerald-600 mt-1">{presentCount}</p>
-                    </div>
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-4">
-                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Absent</span>
-                        <p className="text-2xl font-black text-red-600 mt-1">{absentCount}</p>
-                    </div>
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-4">
-                        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">On Leave</span>
-                        <p className="text-2xl font-black text-blue-600 mt-1">{leaveCount}</p>
+
+                    {/* Pending Regularizations */}
+                    <Link href="/hr/attendance/regularizations" className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5 hover:border-orange-500 hover:shadow-md transition-all cursor-pointer block">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Pending Regularizations</p>
+                            <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white">
+                                <Clock className="h-4 w-4" />
+                            </div>
+                        </div>
+                        <p className="text-2xl font-black text-gray-900">{stats.pendingRegularizations}</p>
+                    </Link>
+
+                    {/* Pending OT Approvals */}
+                    <Link href="/hr/attendance/overtime" className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5 hover:border-orange-500 hover:shadow-md transition-all cursor-pointer block">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Pending OT Approvals</p>
+                            <div className="p-2 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 text-white">
+                                <Activity className="h-4 w-4" />
+                            </div>
+                        </div>
+                        <p className="text-2xl font-black text-gray-900">{stats.pendingOT}</p>
+                    </Link>
+
+                    {/* Manual Entries This Month */}
+                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl p-5">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Manual Entries (Month)</p>
+                            <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+                                <FileText className="h-4 w-4" />
+                            </div>
+                        </div>
+                        <p className="text-2xl font-black text-gray-900">{stats.manualEntriesCount}</p>
                     </div>
                 </div>
 
