@@ -641,7 +641,7 @@ export const pharmacyExpiryReport: ReportDefinition = {
     { key: 'current_stock', label: 'Current Stock', type: 'number' },
     { key: 'expiry_date', label: 'Expiry Date', type: 'date' },
     { key: 'supplier_name', label: 'Supplier Name', type: 'string' },
-    { key: 'is_expired', label: 'Is Expired', type: 'boolean' },
+    { key: 'is_expired', label: 'Is Expired', type: 'string' },
   ],
   defaultSort: { column: 'expiry_date', direction: 'asc' },
   rowLimitSync: 5000,
