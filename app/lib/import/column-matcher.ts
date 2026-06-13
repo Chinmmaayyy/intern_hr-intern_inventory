@@ -57,6 +57,14 @@ const SYNONYMS: Record<string, string[]> = {
     doctor_name: ['doctor', 'dr name', 'physician', 'doctor name', 'consulting doctor'],
     reason_for_visit: ['reason', 'complaint', 'chief complaint', 'visit reason', 'purpose'],
     appointment_date: ['date', 'appt date', 'visit date', 'appointment_date', 'schedule date'],
+    // Item Master fields
+    item_code: ['item code', 'code', 'itemcode', 'item_code'],
+    base_uom: ['base uom', 'uom', 'base_uom', 'unit'],
+    purchase_uom: ['purchase uom', 'purchase_uom', 'purchase unit'],
+    uom_conversion: ['conversion', 'conversion factor', 'uom_conversion', 'uom conversion'],
+    gst_rate: ['gst', 'gst rate', 'tax', 'tax rate', 'gst percent', 'gst_rate'],
+    std_purchase_price: ['purchase price', 'purchase_price', 'cost price', 'cost_price', 'std purchase price', 'purchase price (inr)'],
+    selling_price: ['selling price', 'selling_price', 'price', 'selling rate', 'selling price (inr)'],
 };
 
 function normalize(str: string): string {

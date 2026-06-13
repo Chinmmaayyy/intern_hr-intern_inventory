@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/backend/db';
 import { getSession } from '@/app/lib/session';
+import { INVENTORY_READ_ROLES } from '@/app/lib/inventory-roles';
+
+// In-memory rate limiting map: key -> { count, resetAt }
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(key: string): boolean {
+  const now = Date.now();
+  const limit = rateLimitMap.get(key);
+
+  if (!limit || now > limit.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + 60 * 1000 });
+    return true;
+  }
+
+  if (limit.count >= 60) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
 
 /**
  * GET /api/inventory/barcode/[code]
@@ -15,6 +36,19 @@ export async function GET(
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Restrict lookup to inventory-related roles
+    if (!INVENTORY_READ_ROLES.includes(session.role)) {
+      return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
+    }
+
+    // Rate limiting (60 requests/min per IP/user)
+    const ip = req.headers.get('x-forwarded-for') || '127.0.0.1';
+    const rateLimitKey = `${session.id}-${ip}`;
+    if (!checkRateLimit(rateLimitKey)) {
+      return NextResponse.json({ error: 'Too Many Requests' }, { status: 429 });
+    }
+
     const organizationId = session.organization_id;
     if (!organizationId) {
       return NextResponse.json({ error: 'No organization context' }, { status: 403 });

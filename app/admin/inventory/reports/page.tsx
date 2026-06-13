@@ -1,8 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getInventoryDashboardSummary } from '@/app/actions/inventory-analytics-actions';
-import { getSlowMovingStocks } from '@/app/actions/inventory-analytics-actions';
-import { getExpiryForecast } from '@/app/actions/inventory-analytics-actions';
+import { getInventoryDashboardSummary, getSlowMovingStocks, getExpiryForecast, getVendorPerformance } from '@/app/actions/inventory-analytics-actions';
+import { reconcileInventoryToGLAction } from '@/app/actions/inventory-analytics-actions';
 import {
   TrendingUp, TrendingDown, Clock, AlertTriangle, AlertCircle, RefreshCw, BarChart3,
   Calendar, FileText, ChevronRight, Package, Landmark
@@ -14,18 +13,31 @@ export default function ReportsPage() {
   const [slowMoving, setSlowMoving] = useState<any[]>([]);
   const [nearExpiry, setNearExpiry] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reconciliation, setReconciliation] = useState<any>(null);
+  const [vendors, setVendors] = useState<any[]>([]);
+  const [reconciling, setReconciling] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
-    const [sumRes, slowRes, expRes] = await Promise.all([
+    const [sumRes, slowRes, expRes, vendorRes] = await Promise.all([
       getInventoryDashboardSummary(),
       getSlowMovingStocks(90),
-      getExpiryForecast(90)
+      getExpiryForecast(90),
+      getVendorPerformance(),
     ]);
     if (sumRes.success) setSummary(sumRes.data);
     if (slowRes.success) setSlowMoving(slowRes.data?.slow_moving || []);
     if (expRes.success) setNearExpiry(expRes.data?.near_expiry || []);
+    if (vendorRes.success) setVendors(vendorRes.data?.vendors || []);
     setLoading(false);
+  };
+
+  const runReconciliation = async () => {
+    setReconciling(true);
+    const res = await reconcileInventoryToGLAction();
+    setReconciling(false);
+    if (res.success) setReconciliation(res.data);
+    else alert(res.error || 'Reconciliation failed');
   };
 
   useEffect(() => {
@@ -176,6 +188,41 @@ export default function ReportsPage() {
           </div>
         </div>
       </div>
+
+      {/* GL Reconciliation */}
+      <div className="mt-6 bg-white border border-gray-200 rounded-xl p-5">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2"><Landmark size={18} /> GL Reconciliation</h3>
+          <button onClick={runReconciliation} disabled={reconciling} className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50">
+            {reconciling ? 'Running...' : 'Run Reconciliation'}
+          </button>
+        </div>
+        {reconciliation ? (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div><span className="text-gray-500 text-xs block">Ledger Value</span><span className="font-bold">₹{reconciliation.ledger_value?.toLocaleString('en-IN')}</span></div>
+            <div><span className="text-gray-500 text-xs block">GL Balance</span><span className="font-bold">₹{reconciliation.gl_balance?.toLocaleString('en-IN')}</span></div>
+            <div><span className="text-gray-500 text-xs block">Variance</span><span className={`font-bold ${Math.abs(reconciliation.variance) < 0.01 ? 'text-emerald-600' : 'text-rose-600'}`}>₹{reconciliation.variance?.toLocaleString('en-IN')}</span></div>
+            <div><span className="text-gray-500 text-xs block">Unposted Movements</span><span className="font-bold">{reconciliation.unposted_movements}</span></div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">Run reconciliation to compare sub-ledger valuation against GL inventory control accounts.</p>
+        )}
+      </div>
+
+      {/* Vendor Performance */}
+      {vendors.length > 0 && (
+        <div className="mt-6 bg-white border border-gray-200 rounded-xl p-5 overflow-hidden">
+          <h3 className="font-bold text-gray-900 mb-3">Vendor Performance</h3>
+          <table className="w-full text-xs">
+            <thead><tr className="bg-gray-50 text-gray-500 font-bold uppercase"><th className="py-2 px-3 text-left">Vendor</th><th className="py-2 px-3 text-right">GRNs</th><th className="py-2 px-3 text-right">Fill Rate</th><th className="py-2 px-3 text-right">Rejection</th><th className="py-2 px-3 text-right">Avg Lead (days)</th></tr></thead>
+            <tbody className="divide-y">
+              {vendors.slice(0, 10).map(v => (
+                <tr key={v.vendor_id}><td className="py-2 px-3 font-semibold">{v.vendor_name}</td><td className="py-2 px-3 text-right">{v.grn_count}</td><td className="py-2 px-3 text-right text-emerald-600">{v.fill_rate_pct}%</td><td className="py-2 px-3 text-right text-rose-600">{v.rejection_rate_pct}%</td><td className="py-2 px-3 text-right">{v.avg_lead_time_days ?? '—'}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </AdminPage>
   );
 }

@@ -36,6 +36,8 @@ const ROLE_ROUTES: Record<string, string[]> = {
   "/er": ["admin", "er_staff", "doctor", "nurse"],
   // Master Billing — orchestrates across reception, ipd, finance, admin
   "/billing": ["admin", "finance", "ipd_manager", "receptionist", "opd_manager"],
+  // Inventory module portals
+  "/inventory": ["admin", "store_manager", "procurement_officer", "pharmacist", "nurse", "lab_technician", "ipd_manager", "opd_manager", "doctor", "receptionist"],
 };
 
 // Route -> required module permission (granular permission check)
@@ -57,23 +59,26 @@ const PERMISSION_ROUTES: Record<string, string> = {
   "/ot": "ot.view",
   "/er": "er.view",
   "/billing": "billing.view",
+  "/inventory": "inventory.view",
 };
 
 // System role -> permission map (mirrors session.ts SYSTEM_ROLE_PERMISSIONS)
 // Kept minimal here for Edge runtime compatibility
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  admin: ["opd.view", "ipd.view", "lab.view", "pharmacy.view", "finance.view", "insurance.view", "hr.view", "admin.view", "reports.view", "ot.view", "er.view", "billing.view"],
-  doctor: ["opd.view", "ipd.view", "lab.view", "pharmacy.view", "finance.view", "insurance.view", "reports.view", "ot.view", "er.view"],
-  receptionist: ["opd.view", "ipd.view", "finance.view", "insurance.view", "reports.view", "billing.view"],
-  lab_technician: ["lab.view", "reports.view"],
-  pharmacist: ["pharmacy.view", "reports.view"],
-  finance: ["finance.view", "insurance.view", "reports.view", "billing.view"],
-  ipd_manager: ["ipd.view", "opd.view", "lab.view", "pharmacy.view", "finance.view", "reports.view", "ot.view", "billing.view", "insurance.view"],
-  nurse: ["ipd.view", "opd.view", "lab.view", "pharmacy.view", "reports.view", "ot.view", "er.view"],
-  opd_manager: ["opd.view", "lab.view", "pharmacy.view", "finance.view", "reports.view", "billing.view"],
+  admin: ["opd.view", "ipd.view", "lab.view", "pharmacy.view", "finance.view", "insurance.view", "hr.view", "admin.view", "reports.view", "ot.view", "er.view", "billing.view", "inventory.view"],
+  doctor: ["opd.view", "ipd.view", "lab.view", "pharmacy.view", "finance.view", "insurance.view", "reports.view", "ot.view", "er.view", "inventory.view"],
+  receptionist: ["opd.view", "ipd.view", "finance.view", "insurance.view", "reports.view", "billing.view", "inventory.view"],
+  lab_technician: ["lab.view", "reports.view", "inventory.view"],
+  pharmacist: ["pharmacy.view", "reports.view", "inventory.view"],
+  finance: ["finance.view", "insurance.view", "reports.view", "billing.view", "inventory.view"],
+  ipd_manager: ["ipd.view", "opd.view", "lab.view", "pharmacy.view", "finance.view", "reports.view", "ot.view", "billing.view", "insurance.view", "inventory.view"],
+  nurse: ["ipd.view", "opd.view", "lab.view", "pharmacy.view", "reports.view", "ot.view", "er.view", "inventory.view"],
+  opd_manager: ["opd.view", "lab.view", "pharmacy.view", "finance.view", "reports.view", "billing.view", "inventory.view"],
   hr: ["hr.view", "reports.view"],
   ot_manager: ["ot.view", "ipd.view", "pharmacy.view", "reports.view"],
   er_staff: ["er.view", "ipd.view", "lab.view", "pharmacy.view", "reports.view"],
+  store_manager: ["inventory.view", "reports.view"],
+  procurement_officer: ["inventory.view", "reports.view"],
 };
 
 export async function proxy(request: NextRequest) {

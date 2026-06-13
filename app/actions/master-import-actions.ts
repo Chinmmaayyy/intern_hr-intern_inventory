@@ -58,6 +58,15 @@ export async function importMasterData(
           case 'medicine_master':
             result = await createMedicine(row);
             break;
+          case 'item_master': {
+            const { importItems } = await import('./item-master-actions');
+            const batchResult = await importItems([row as Record<string, string>], false);
+            const rowResult = batchResult.results?.[0];
+            result = rowResult?.status === 'ok'
+              ? { success: true }
+              : { success: false, error: rowResult?.message || batchResult.error || 'Import failed' };
+            break;
+          }
           default:
             throw new Error(`Unknown import type: ${type}`);
         }

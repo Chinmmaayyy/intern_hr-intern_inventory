@@ -5,9 +5,10 @@ import { listItems } from '@/app/actions/item-master-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
 import {
   ArrowLeft, Store, Package, Plus, ClipboardList, Settings, Check,
-  AlertTriangle, RefreshCw, X, Search, CheckCircle2, ChevronRight
+  AlertTriangle, RefreshCw, X, Search, CheckCircle2, ChevronRight, MapPin, User, Activity, AlertCircle, ArrowUpRight
 } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -16,6 +17,9 @@ interface PageProps {
 export default function StoreDetailPage({ params }: PageProps) {
   const resolvedParams = use(params);
   const storeId = parseInt(resolvedParams.id);
+  
+  const pathname = usePathname();
+  const routePrefix = pathname.startsWith('/admin') ? '/admin/inventory' : '/inventory';
 
   const [store, setStore] = useState<any>(null);
   const [stock, setStock] = useState<any[]>([]);
@@ -174,89 +178,106 @@ export default function StoreDetailPage({ params }: PageProps) {
     }
   };
 
+  // Calculations for detail metrics
+  const totalItemsCount = stock.length;
+  const totalStockQty = stock.reduce((sum, s) => sum + (s.quantity_on_hand || 0), 0);
+  const openingLinesTotalCost = openingLines.reduce((sum, l) => sum + (l.quantity * l.unit_cost), 0);
+
   return (
     <AdminPage
-      pageTitle={store ? store.name : 'Store Details'}
+      pageTitle={store ? `${store.name}` : 'Store Details'}
       pageIcon={<Store size={20} />}
       onRefresh={loadStoreDetails}
       refreshing={loading}
       headerActions={
         <div className="flex gap-2">
           <Link
-            href="/admin/inventory/stores"
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 transition"
+            href={`${routePrefix}/stores`}
+            className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-700 bg-white hover:bg-gray-50 transition-all shadow-sm"
           >
-            <ArrowLeft size={16} /> Back to Stores
+            <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-0.5" /> Back to Stores
           </Link>
           <button
             onClick={loadStoreDetails}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 bg-white hover:bg-gray-50 transition"
+            className="flex items-center gap-1.5 px-4 py-2 border border-gray-200 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-700 bg-white hover:bg-gray-50 transition-all shadow-sm cursor-pointer"
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
           </button>
         </div>
       }
     >
       {loading && !store ? (
         <div className="flex justify-center items-center py-32">
-          <RefreshCw className="h-8 w-8 animate-spin text-amber-500" />
+          <div className="w-10 h-10 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin"></div>
         </div>
       ) : !store ? (
-        <div className="text-center py-16 bg-white border border-gray-200 rounded-xl">
-          <AlertTriangle className="text-amber-500 mx-auto mb-3" size={40} />
-          <p className="text-gray-800 font-semibold text-lg">Store not found</p>
-          <Link href="/admin/inventory/stores" className="text-amber-600 hover:underline mt-2 inline-block">
-            Back to Stores
+        <div className="text-center py-20 bg-white border border-gray-150 rounded-2xl shadow-sm">
+          <AlertTriangle className="text-amber-500 mx-auto mb-4" size={44} />
+          <p className="text-gray-900 text-lg font-bold">Store Location not found</p>
+          <Link href={`${routePrefix}/stores`} className="text-orange-500 hover:underline mt-2 inline-block font-semibold text-sm">
+            Back to Stores list
           </Link>
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Metadata Card */}
-          <div className="bg-white border border-gray-200 shadow-sm rounded-xl p-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Cost Center</span>
-                <p className="text-sm font-semibold text-gray-900">{store.cost_center || 'Not assigned'}</p>
+          {/* Metadata Card Panel */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="bg-white border border-gray-200/60 shadow-sm rounded-2xl p-5 hover:border-gray-300 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Cost Center</span>
+                <div className="p-2 bg-blue-50 rounded-xl"><MapPin className="h-4 w-4 text-blue-500" /></div>
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">In-Charge Manager</span>
-                <p className="text-sm font-semibold text-gray-900">{store.incharge_user?.name || 'Unassigned'}</p>
+              <p className="text-lg font-black text-gray-900">{store.cost_center || 'Not Configured'}</p>
+              <p className="text-xs text-gray-400 mt-1">Branch: {store.branch?.branch_name || 'Main Organization'}</p>
+            </div>
+
+            <div className="bg-white border border-gray-200/60 shadow-sm rounded-2xl p-5 hover:border-gray-300 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">In-Charge Manager</span>
+                <div className="p-2 bg-violet-50 rounded-xl"><User className="h-4 w-4 text-violet-500" /></div>
               </div>
-              <div>
-                <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Stock Items Count</span>
-                <p className="text-sm font-semibold text-gray-900">{stock.length} unique batches/items</p>
+              <p className="text-lg font-black text-gray-900">{store.incharge_user?.name || 'Unassigned'}</p>
+              <p className="text-xs text-gray-400 mt-1">Authorized store management</p>
+            </div>
+
+            <div className="bg-white border border-gray-200/60 shadow-sm rounded-2xl p-5 hover:border-gray-300 transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Stock Levels</span>
+                <div className="p-2 bg-emerald-50 rounded-xl"><Package className="h-4 w-4 text-emerald-500" /></div>
               </div>
+              <p className="text-lg font-black text-gray-900">{totalStockQty} Units</p>
+              <p className="text-xs text-gray-400 mt-1">{totalItemsCount} distinct item batches</p>
             </div>
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Premium Navigation Tabs */}
           <div className="flex border-b border-gray-200 gap-6">
             <button
               onClick={() => setActiveTab('stock')}
-              className={`pb-3 text-sm font-bold border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'stock'
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Package size={16} /> Stock List ({stock.length})
+              <Package size={16} /> Stock List ({totalItemsCount})
             </button>
             <button
               onClick={() => setActiveTab('reorder')}
-              className={`pb-3 text-sm font-bold border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'reorder'
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              <Settings size={16} /> Store Stock Thresholds
+              <Settings size={16} /> Stock Thresholds ({store.store_settings?.length || 0})
             </button>
             <button
               onClick={() => setActiveTab('opening')}
-              className={`pb-3 text-sm font-bold border-b-2 transition cursor-pointer flex items-center gap-2 ${
+              className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
                 activeTab === 'opening'
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
               <Plus size={16} /> Opening Stock Posting
@@ -265,7 +286,7 @@ export default function StoreDetailPage({ params }: PageProps) {
 
           {/* TAB 1: Stock List */}
           {activeTab === 'stock' && (
-            <div className="space-y-4">
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -274,129 +295,165 @@ export default function StoreDetailPage({ params }: PageProps) {
                     placeholder="Search stock list by item name..."
                     value={stockSearch}
                     onChange={(e) => setStockSearch(e.target.value)}
-                    className="w-full bg-white border border-gray-300 rounded-lg pl-9 pr-4 py-2 text-sm text-gray-900 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition"
                   />
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      <th className="py-3 px-4">Item Details</th>
-                      <th className="py-3 px-4">Batch Number</th>
-                      <th className="py-3 px-4">Expiry Date</th>
-                      <th className="py-3 px-4 text-right">Qty On Hand</th>
-                      <th className="py-3 px-4 text-right">Reorder Pt</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm text-gray-700">
-                    {stock.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center py-12 text-gray-500 text-sm">
-                          No stock records found. Go to 'Opening Stock Posting' to load inventory.
-                        </td>
+              <div className="bg-white border border-gray-150 shadow-sm rounded-2xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50/50 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                        <th className="py-3.5 px-5">Item Details</th>
+                        <th className="py-3.5 px-5">Batch Number</th>
+                        <th className="py-3.5 px-5 text-right">Qty On Hand</th>
+                        <th className="py-3.5 px-5 text-right">Reorder Pt</th>
+                        <th className="py-3.5 px-5 text-center">Status</th>
                       </tr>
-                    ) : (
-                      stock.map((s) => {
-                        const lowStock = s.quantity_on_hand <= (s.item?.reorder_point || 0);
-                        return (
-                          <tr key={s.id} className="hover:bg-gray-50/50">
-                            <td className="py-3.5 px-4">
-                              <div className="font-semibold text-gray-900">{s.item?.name}</div>
-                              <div className="text-xs text-gray-500">{s.item?.item_code} | {s.item?.base_uom}</div>
-                            </td>
-                            <td className="py-3.5 px-4 font-mono text-gray-600">
-                              {s.batch?.batch_no || <span className="text-gray-400">—</span>}
-                            </td>
-                            <td className="py-3.5 px-4 text-gray-600">
-                              {s.batch?.expiry_date ? new Date(s.batch.expiry_date).toLocaleDateString('en-IN') : <span className="text-gray-400">—</span>}
-                            </td>
-                            <td className="py-3.5 px-4 text-right font-medium">
-                              <span className={`px-2 py-0.5 rounded text-xs font-bold ${lowStock ? 'bg-rose-100 text-rose-800' : 'bg-green-100 text-green-800'}`}>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                      {stock.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-16 text-gray-400 text-sm">
+                            <Package size={36} className="mx-auto text-gray-300 mb-2" />
+                            <p className="font-semibold text-gray-600">No stock records found</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Go to 'Opening Stock Posting' to post initial inventory.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        stock.map((s) => {
+                          const setting = store.store_settings?.find((st: any) => st.item_id === s.item_id);
+                          const reorderPt = setting?.reorder_point ?? s.item?.reorder_point ?? 0;
+                          const maxLvl = setting?.max_level ?? s.item?.max_level ?? 0;
+                          
+                          const lowStock = s.quantity_on_hand <= reorderPt;
+                          const overStock = maxLvl > 0 && s.quantity_on_hand > maxLvl;
+
+                          return (
+                            <tr key={s.id} className="hover:bg-gray-50/30 transition-colors">
+                              <td className="py-3.5 px-5">
+                                <div className="font-bold text-gray-900 leading-snug">{s.item?.name}</div>
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">{s.item?.item_code} · UOM: {s.item?.base_uom}</div>
+                              </td>
+                              <td className="py-3.5 px-5 font-mono text-xs text-gray-600 font-semibold">
+                                {s.batch?.batch_no || <span className="text-gray-300 font-normal">—</span>}
+                              </td>
+                              <td className="py-3.5 px-5 text-right font-bold text-gray-900">
                                 {s.quantity_on_hand}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-4 text-right text-gray-500">
-                              {s.item?.reorder_point || 0}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                              </td>
+                              <td className="py-3.5 px-5 text-right text-gray-500 font-medium">
+                                {reorderPt}
+                              </td>
+                              <td className="py-3.5 px-5 text-center shrink-0">
+                                {lowStock ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-55 px-2.5 py-1 rounded-full border border-rose-100">
+                                    <AlertCircle size={10} /> Low Stock
+                                  </span>
+                                ) : overStock ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-55 px-2.5 py-1 rounded-full border border-blue-100">
+                                    <ArrowUpRight size={10} /> Overstocked
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-55 px-2.5 py-1 rounded-full border border-emerald-100">
+                                    <Check size={10} /> Optimal
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
           {/* TAB 2: Threshold Settings */}
           {activeTab === 'reorder' && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">
-                Set Par, Reorder Points, and Max stocking thresholds specifically for this store location. These control automatic indents and replenishment alerts.
-              </p>
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
+              <div className="bg-orange-50/50 border border-orange-100/60 p-4 rounded-2xl">
+                <p className="text-xs font-semibold text-orange-800 leading-relaxed">
+                  Set Par, Reorder Points, and Max stocking thresholds specifically for this store location. These values control automatic indents, purchase requisitions, and low stock warnings.
+                </p>
+              </div>
 
-              <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                      <th className="py-3 px-4">Item</th>
-                      <th className="py-3 px-4 text-center">Auto Indent</th>
-                      <th className="py-3 px-4 text-right">Par Level</th>
-                      <th className="py-3 px-4 text-right">Reorder Point</th>
-                      <th className="py-3 px-4 text-right">Max Level</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm text-gray-700">
-                    {allItems.map((item) => {
-                      const setting = store.store_settings?.find((s: any) => s.item_id === item.id);
-                      return (
-                        <tr key={item.id} className="hover:bg-gray-50/50">
-                          <td className="py-3.5 px-4">
-                            <div className="font-semibold text-gray-900">{item.name}</div>
-                            <div className="text-xs text-gray-500">{item.item_code} | UOM: {item.base_uom}</div>
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            {setting?.auto_indent ? (
-                              <span className="inline-flex bg-emerald-100 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold">Auto-indent</span>
-                            ) : (
-                              <span className="inline-flex bg-gray-100 text-gray-600 text-xs px-2.5 py-0.5 rounded-full">Manual</span>
-                            )}
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-medium text-gray-900">{setting?.par_level ?? 0}</td>
-                          <td className="py-3.5 px-4 text-right text-gray-600">{setting?.reorder_point ?? 0}</td>
-                          <td className="py-3.5 px-4 text-right text-gray-600">{setting?.max_level ?? 0}</td>
-                          <td className="py-3.5 px-4 text-center">
-                            <button
-                              onClick={() => openConfigModal(item, setting)}
-                              className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-1 rounded transition cursor-pointer"
-                            >
-                              Configure
-                            </button>
+              <div className="bg-white border border-gray-150 shadow-sm rounded-2xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50/50 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                        <th className="py-3.5 px-5">Item</th>
+                        <th className="py-3.5 px-5 text-center">Auto Indent</th>
+                        <th className="py-3.5 px-5 text-right">Par Level</th>
+                        <th className="py-3.5 px-5 text-right">Reorder Point</th>
+                        <th className="py-3.5 px-5 text-right">Max Level</th>
+                        <th className="py-3.5 px-5 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                      {allItems.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-16 text-gray-400">
+                            No master items available to configure thresholds.
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      ) : (
+                        allItems.map((item) => {
+                          const setting = store.store_settings?.find((s: any) => s.item_id === item.id);
+                          return (
+                            <tr key={item.id} className="hover:bg-gray-50/30 transition-colors">
+                              <td className="py-3.5 px-5">
+                                <div className="font-bold text-gray-900 leading-snug">{item.name}</div>
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-0.5">{item.item_code} · UOM: {item.base_uom}</div>
+                              </td>
+                              <td className="py-3.5 px-5 text-center">
+                                {setting?.auto_indent ? (
+                                  <span className="inline-flex bg-emerald-50 text-emerald-700 text-[10px] font-extrabold border border-emerald-100 px-2.5 py-1 rounded-full uppercase tracking-wider">Auto-indent</span>
+                                ) : (
+                                  <span className="inline-flex bg-gray-105 text-gray-500 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Manual</span>
+                                )}
+                              </td>
+                              <td className="py-3.5 px-5 text-right font-bold text-gray-900">{setting?.par_level ?? 0}</td>
+                              <td className="py-3.5 px-5 text-right text-gray-600 font-semibold">{setting?.reorder_point ?? 0}</td>
+                              <td className="py-3.5 px-5 text-right text-gray-600 font-semibold">{setting?.max_level ?? 0}</td>
+                              <td className="py-3.5 px-5 text-center">
+                                <button
+                                  onClick={() => openConfigModal(item, setting)}
+                                  className="bg-gray-900 hover:bg-gray-800 text-white text-[11px] font-bold px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-sm"
+                                >
+                                  Configure
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
           {/* TAB 3: Opening Stock */}
           {activeTab === 'opening' && (
-            <div className="space-y-6">
-              <div className="bg-gray-50 border border-gray-200 p-5 rounded-xl space-y-4">
-                <h3 className="text-sm font-bold text-gray-900">Post Opening Stock Form</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-in fade-in-50 duration-200">
+              {/* Form Card (5 cols) */}
+              <div className="lg:col-span-5 bg-white border border-gray-150 shadow-sm rounded-2xl p-5 space-y-4">
+                <h3 className="text-sm font-extrabold text-gray-900 border-b border-gray-105 pb-3 flex items-center gap-1.5">
+                  <Plus className="h-4 w-4 text-orange-500" /> Post Opening Stock Form
+                </h3>
+                
+                <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-gray-500 font-medium mb-1">Select Item</label>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Select Item</label>
                     <select
                       value={selectedItemId}
                       onChange={(e) => setSelectedItemId(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-3 py-2 focus:outline-none focus:border-amber-500"
+                      className="w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-955 px-3.5 py-2.5 focus:outline-none focus:border-orange-500 cursor-pointer"
                     >
                       <option value="">Choose item...</option>
                       {allItems.map(i => (
@@ -408,51 +465,53 @@ export default function StoreDetailPage({ params }: PageProps) {
                   </div>
 
                   {selectedItemId && allItems.find(i => i.id === parseInt(selectedItemId))?.is_batch_tracked && (
-                    <div>
-                      <label className="block text-xs text-gray-500 font-medium mb-1">Batch Number</label>
+                    <div className="animate-in slide-in-from-top-1 duration-150">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Batch Number</label>
                       <input
                         type="text"
                         placeholder="e.g. BATCH-01"
                         value={openingBatch}
                         onChange={(e) => setOpeningBatch(e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-3 py-2 focus:outline-none focus:border-amber-500"
+                        className="w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-955 px-3.5 py-2.5 focus:outline-none focus:border-orange-500"
                       />
                     </div>
                   )}
 
                   {selectedItemId && allItems.find(i => i.id === parseInt(selectedItemId))?.is_expiry_tracked && (
-                    <div>
-                      <label className="block text-xs text-gray-500 font-medium mb-1">Expiry Date</label>
+                    <div className="animate-in slide-in-from-top-1 duration-150">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Expiry Date</label>
                       <input
                         type="date"
                         value={openingExpiry}
                         onChange={(e) => setOpeningExpiry(e.target.value)}
-                        className="w-full bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-3 py-2 focus:outline-none"
+                        className="w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-955 px-3.5 py-2.5 focus:outline-none"
                       />
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-xs text-gray-500 font-medium mb-1">Quantity</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={openingQty}
-                      onChange={(e) => setOpeningQty(parseInt(e.target.value) || 0)}
-                      className="w-full bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-3 py-2 focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Quantity</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={openingQty}
+                        onChange={(e) => setOpeningQty(parseInt(e.target.value) || 0)}
+                        className="w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-955 px-3.5 py-2.5 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-xs text-gray-500 font-medium mb-1">Unit Cost (INR)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={openingCost}
-                      onChange={(e) => setOpeningCost(parseFloat(e.target.value) || 0)}
-                      className="w-full bg-white border border-gray-300 rounded-lg text-sm text-gray-900 px-3 py-2 focus:outline-none focus:border-amber-500"
-                    />
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Unit Cost (INR)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={openingCost}
+                        onChange={(e) => setOpeningCost(parseFloat(e.target.value) || 0)}
+                        className="w-full bg-white border border-gray-200 rounded-xl text-sm text-gray-955 px-3.5 py-2.5 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -460,83 +519,108 @@ export default function StoreDetailPage({ params }: PageProps) {
                   <button
                     type="button"
                     onClick={addOpeningLine}
-                    className="bg-gray-800 hover:bg-gray-900 text-white font-semibold text-xs px-4 py-2 rounded-lg transition cursor-pointer"
+                    className="bg-gray-955 hover:bg-gray-800 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition cursor-pointer shadow-sm w-full uppercase tracking-wider"
                   >
                     Add Line Item
                   </button>
                 </div>
               </div>
 
-              {/* Pending Lines Table */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pending Opening Stock Entries</h4>
-                <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden">
-                  <table className="w-full border-collapse text-left">
-                    <thead>
-                      <tr className="border-b border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                        <th className="py-2.5 px-4">Item</th>
-                        <th className="py-2.5 px-4">Batch / Expiry</th>
-                        <th className="py-2.5 px-4 text-right">Qty</th>
-                        <th className="py-2.5 px-4 text-right">Unit Cost</th>
-                        <th className="py-2.5 px-4 text-right">Total Cost</th>
-                        <th className="py-2.5 px-4 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 text-sm text-gray-700">
-                      {openingLines.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="text-center py-8 text-gray-400">
-                            No lines added yet. Add items above to build opening stock batch.
-                          </td>
+              {/* Pending Lines list (7 cols) */}
+              <div className="lg:col-span-7 space-y-4">
+                <div className="bg-white border border-gray-150 shadow-sm rounded-2xl overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pending Opening Stock Lines</h4>
+                    {openingLines.length > 0 && (
+                      <span className="bg-orange-50 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-100">
+                        {openingLines.length} items to post
+                      </span>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left">
+                      <thead>
+                        <tr className="border-b border-gray-200 bg-gray-50/50 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
+                          <th className="py-2.5 px-4">Item</th>
+                          <th className="py-2.5 px-4">Batch / Expiry</th>
+                          <th className="py-2.5 px-4 text-right">Qty</th>
+                          <th className="py-2.5 px-4 text-right">Cost/Unit</th>
+                          <th className="py-2.5 px-4 text-right">Total</th>
+                          <th className="py-2.5 px-4 text-center">Action</th>
                         </tr>
-                      ) : (
-                        openingLines.map((l, index) => (
-                          <tr key={index} className="hover:bg-gray-50/50">
-                            <td className="py-2.5 px-4">
-                              <div className="font-semibold text-gray-950">{l.name}</div>
-                              <div className="text-xs text-gray-500">UOM: {l.uom}</div>
-                            </td>
-                            <td className="py-2.5 px-4 text-xs font-mono text-gray-600">
-                              {l.batch_no ? `Batch: ${l.batch_no}` : 'No batch'}
-                              {l.expiry_date ? ` | Exp: ${l.expiry_date}` : ''}
-                            </td>
-                            <td className="py-2.5 px-4 text-right font-medium text-gray-900">{l.quantity}</td>
-                            <td className="py-2.5 px-4 text-right text-gray-600">₹{l.unit_cost.toFixed(2)}</td>
-                            <td className="py-2.5 px-4 text-right font-semibold text-amber-600">₹{(l.quantity * l.unit_cost).toFixed(2)}</td>
-                            <td className="py-2.5 px-4 text-center">
-                              <button onClick={() => removeOpeningLine(index)} className="text-red-500 hover:text-red-700 p-1">
-                                <X size={16} />
-                              </button>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                        {openingLines.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="text-center py-12 text-gray-400">
+                              <ClipboardList className="mx-auto text-gray-300 mb-2" size={32} />
+                              <p className="font-semibold text-gray-600 text-xs">No lines added yet</p>
+                              <p className="text-[10px] text-gray-400">Configure inputs on the left form to build batch.</p>
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ) : (
+                          openingLines.map((l, index) => (
+                            <tr key={index} className="hover:bg-gray-50/20 transition-colors">
+                              <td className="py-2.5 px-4">
+                                <div className="font-bold text-gray-900 leading-snug">{l.name}</div>
+                                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">UOM: {l.uom}</div>
+                              </td>
+                              <td className="py-2.5 px-4 text-xs font-mono text-gray-600 font-semibold">
+                                {l.batch_no ? `B: ${l.batch_no}` : 'No Batch'}
+                                {l.expiry_date ? ` | Exp: ${l.expiry_date}` : ''}
+                              </td>
+                              <td className="py-2.5 px-4 text-right font-bold text-gray-900">{l.quantity}</td>
+                              <td className="py-2.5 px-4 text-right text-gray-600 font-medium">₹{l.unit_cost.toFixed(2)}</td>
+                              <td className="py-2.5 px-4 text-right font-bold text-orange-600">₹{(l.quantity * l.unit_cost).toFixed(2)}</td>
+                              <td className="py-2.5 px-4 text-center">
+                                <button onClick={() => removeOpeningLine(index)} className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-gray-50 transition cursor-pointer">
+                                  <X size={16} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {openingLines.length > 0 && (
+                    <div className="bg-gray-50 border-t border-gray-100 p-4 flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Grand Total Value</span>
+                      <span className="text-lg font-black text-orange-600">₹{openingLinesTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Posting Status Messages */}
                 {postError && (
-                  <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-sm flex gap-2">
+                  <div className="p-3.5 bg-rose-50 border border-rose-100 text-rose-800 rounded-xl text-sm flex gap-2 shadow-sm animate-in slide-in-from-bottom-2">
                     <AlertTriangle className="shrink-0 mt-0.5" size={16} />
-                    <span>{postError}</span>
+                    <div>
+                      <h5 className="font-bold text-rose-900">Post Failed</h5>
+                      <p className="text-xs mt-0.5 text-rose-700">{postError}</p>
+                    </div>
                   </div>
                 )}
                 {postSuccess && (
-                  <div className="p-3.5 bg-green-50 border border-green-200 text-green-800 rounded-lg text-sm flex gap-2">
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-105 text-emerald-850 rounded-xl text-sm flex gap-2 shadow-sm animate-in slide-in-from-bottom-2">
                     <CheckCircle2 className="shrink-0 mt-0.5" size={16} />
-                    <span>Opening stock successfully posted and GL ledger entries generated!</span>
+                    <div>
+                      <h5 className="font-bold text-emerald-900">Success</h5>
+                      <p className="text-xs mt-0.5 text-emerald-700">Opening stock posted. Dr Inventory and Cr Equity Ledger records generated!</p>
+                    </div>
                   </div>
                 )}
 
                 {openingLines.length > 0 && (
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end pt-2">
                     <button
                       onClick={handlePostOpeningStock}
                       disabled={postingStock}
-                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md transition disabled:opacity-50 cursor-pointer"
+                      className="bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                     >
-                      {postingStock ? 'Posting...' : 'Post Opening Stock to GL & Ledger'}
+                      {postingStock ? 'Posting Inventory...' : 'Post Opening Stock to GL'}
+                      <ChevronRight size={16} />
                     </button>
                   </div>
                 )}
@@ -549,75 +633,80 @@ export default function StoreDetailPage({ params }: PageProps) {
       {/* Threshold configuration modal */}
       {showConfigModal && configItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-gray-500/50 backdrop-blur-sm" onClick={() => setShowConfigModal(false)}></div>
-          <div className="bg-white border border-gray-200 rounded-xl max-w-md w-full relative z-10 p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-lg font-bold text-gray-900">Threshold Setup</h2>
-              <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-gray-750 transition">
-                <X size={20} />
+          <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-md transition-opacity" onClick={() => setShowConfigModal(false)}></div>
+          <div className="bg-white border border-gray-100 rounded-2xl max-w-md w-full relative z-10 p-6 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Ambient background glows inside modal */}
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex justify-between items-center mb-5 relative z-10">
+              <h2 className="text-lg font-extrabold text-gray-900">Threshold Setup</h2>
+              <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-50 transition cursor-pointer">
+                <X size={18} />
               </button>
             </div>
 
-            <p className="text-xs text-gray-600 mb-4 bg-gray-50 p-2.5 border border-gray-200 rounded">
-              Setting levels for: <span className="text-gray-900 font-semibold">{configItem.name}</span>
-            </p>
+            <div className="text-xs text-orange-850 bg-orange-50/50 p-3.5 border border-orange-100 rounded-xl mb-4 relative z-10">
+              Setting custom replenishment parameters for:<br />
+              <strong className="text-gray-900 text-sm mt-1 block">{configItem.name}</strong>
+            </div>
 
-            <form onSubmit={handleConfigSubmit} className="space-y-4">
+            <form onSubmit={handleConfigSubmit} className="space-y-4 relative z-10">
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Par Level</label>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Par Level</label>
                   <input
                     type="number"
                     value={parLevel}
                     onChange={(e) => setParLevel(parseInt(e.target.value) || 0)}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-amber-500"
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-955 focus:outline-none focus:border-orange-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Reorder Pt</label>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Reorder Pt</label>
                   <input
                     type="number"
                     value={reorderPoint}
                     onChange={(e) => setReorderPoint(parseInt(e.target.value) || 0)}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-amber-500"
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-955 focus:outline-none focus:border-orange-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Max Level</label>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Max Level</label>
                   <input
                     type="number"
                     value={maxLevel}
                     onChange={(e) => setMaxLevel(parseInt(e.target.value) || 0)}
-                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-amber-500"
+                    className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-955 focus:outline-none focus:border-orange-500"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2.5 pt-2">
                 <input
                   type="checkbox"
                   id="autoIndent"
                   checked={autoIndent}
                   onChange={(e) => setAutoIndent(e.target.checked)}
-                  className="w-4 h-4 text-amber-600 bg-white border-gray-300 rounded focus:ring-amber-500"
+                  className="w-4.5 h-4.5 text-orange-600 bg-white border-gray-300 rounded focus:ring-orange-500 cursor-pointer"
                 />
-                <label htmlFor="autoIndent" className="text-sm text-gray-700 cursor-pointer select-none">
-                  Auto-trigger purchase requisition/indent when stock falls below reorder point
+                <label htmlFor="autoIndent" className="text-xs font-semibold text-gray-700 cursor-pointer select-none leading-normal">
+                  Auto-trigger purchase requisition or internal indent when stock falls below reorder point
                 </label>
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 mt-5">
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-5">
                 <button
                   type="button"
                   onClick={() => setShowConfigModal(false)}
-                  className="px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg text-sm"
+                  className="px-4 py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-bold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submittingConfig}
-                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2 rounded-lg text-sm transition"
+                  className="bg-orange-600 hover:bg-orange-500 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition shadow-md"
                 >
                   {submittingConfig ? 'Saving...' : 'Save Settings'}
                 </button>

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { listTransfers, createStoreTransfer } from '@/app/actions/stock-actions';
+import { listTransfers, createStoreTransfer, receiveTransfer } from '@/app/actions/stock-actions';
 import { listStores } from '@/app/actions/store-actions';
 import { listItems } from '@/app/actions/item-master-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
@@ -28,6 +28,12 @@ export default function StockTransfersPage() {
   const [selectedItemId, setSelectedItemId] = useState('');
   const [qty, setQty] = useState(1);
   const [unitCost, setUnitCost] = useState(0);
+
+  const handleReceiveTransfer = async (id: number) => {
+    const res = await receiveTransfer(id);
+    if (res.success) loadData();
+    else alert(res.error || 'Receive failed');
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -151,12 +157,15 @@ export default function StockTransfersPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-gray-500">{trf.dispatch_at ? new Date(trf.dispatch_at).toLocaleDateString() : 'N/A'}</td>
-                  <td className="py-3.5 px-4 text-center">
+                  <td className="py-3.5 px-4 text-center flex gap-1 justify-center">
+                    {trf.status === 'In Transit' && (
+                      <button onClick={() => handleReceiveTransfer(trf.id)} className="bg-emerald-600 text-white text-xs px-2 py-1 rounded-lg font-semibold">Receive</button>
+                    )}
                     <button
                       onClick={() => { setSelectedTransfer(trf); setShowViewModal(true); }}
-                      className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 mx-auto cursor-pointer"
+                      className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
                     >
-                      <Eye size={14} /> Review Details
+                      <Eye size={14} /> Details
                     </button>
                   </td>
                 </tr>

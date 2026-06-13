@@ -1,12 +1,13 @@
 'use server';
-import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-
-// Role groups for inventory store operations
-const INVENTORY_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
-const INVENTORY_ADMIN_ROLES = ['admin'];
-const INVENTORY_FINANCE_ROLES = ['admin', 'finance'];
+import { requireInventoryContext } from '@/app/lib/inventory-context';
+import {
+  INVENTORY_READ_ROLES,
+  GRN_WRITE_ROLES as INVENTORY_ADMIN_ROLES,
+  COUNT_APPROVE_ROLES as INVENTORY_FINANCE_ROLES,
+  assertStoreAccess,
+} from '@/app/lib/inventory-roles';
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -39,7 +40,7 @@ const storeItemSettingSchema = z.object({
 
 export async function listStores(opts?: { search?: string; store_type?: string; is_active?: boolean }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) where.name = { contains: opts.search, mode: 'insensitive' };
     if (opts?.store_type) where.store_type = opts.store_type;
@@ -62,7 +63,7 @@ export async function listStores(opts?: { search?: string; store_type?: string; 
 
 export async function createStore(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const data = storeSchema.parse(input);
     const existing = await db.store.findFirst({ where: { store_code: data.store_code, organizationId } });
     if (existing) return { success: false, error: `Store code '${data.store_code}' already exists` };
@@ -83,7 +84,7 @@ export async function createStore(input: unknown) {
 
 export async function updateStore(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const data = storeSchema.partial().parse(input);
     const row = await db.store.update({ where: { id } as any, data });
     revalidatePath('/admin/inventory/stores');
@@ -95,7 +96,7 @@ export async function updateStore(id: number, input: unknown) {
 
 export async function getStoreById(id: number) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const store = await db.store.findFirst({
       where: { id, organizationId },
       include: {
@@ -123,7 +124,7 @@ export async function getStoreById(id: number) {
 
 export async function getStoreStock(store_id: number, opts?: { search?: string; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 50;
     const where: any = { store_id, organizationId };
@@ -159,7 +160,7 @@ export async function getStoreStock(store_id: number, opts?: { search?: string; 
 
 export async function upsertStoreItemSetting(input: unknown) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const data = storeItemSettingSchema.parse(input);
     const row = await db.storeItemSetting.upsert({
       where: { store_id_item_id: { store_id: data.store_id, item_id: data.item_id } },
@@ -193,7 +194,7 @@ export async function postOpeningStock(
   }>
 ) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const store = await db.store.findFirst({ where: { id: store_id, organizationId } });
     if (!store) return { success: false, error: 'Store not found' };
 
@@ -262,6 +263,24 @@ export async function postOpeningStock(
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
+
+    // Post opening stock to GL (non-blocking per line)
+    try {
+      const { postOpeningStockToGL } = await import('./inventory-gl-actions');
+      for (const mov of results) {
+        await postOpeningStockToGL({
+          organizationId,
+          item_id: mov.item_id,
+          quantity: mov.quantity_in,
+          unit_cost: mov.unit_cost,
+          store_id,
+          source_id: mov.id.toString(),
+        });
+      }
+    } catch (glErr: unknown) {
+      console.error('Opening stock GL posting error:', (glErr as Error).message);
+    }
+
     revalidatePath(`/inventory/stores/${store_id}`);
     return { success: true, created: results.length };
   } catch (e: any) {
@@ -275,7 +294,7 @@ export async function postOpeningStock(
 
 export async function getStoreValuationSummary(store_id?: number) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_FINANCE_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_FINANCE_ROLES);
     const where: any = { organizationId };
     if (store_id) where.store_id = store_id;
     const stocks = await db.storeStock.findMany({

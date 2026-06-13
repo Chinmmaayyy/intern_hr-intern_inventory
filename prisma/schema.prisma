@@ -1922,6 +1922,7 @@ model GoodsReceiptNote {
   batches        pharmacy_batch_inventory[]
   items          GoodsReceiptNoteItem[]
   general_batches ItemBatch[]
+  purchase_invoices PharmacyPurchaseInvoice[]
 
   @@index([organizationId])
   @@index([po_id])
@@ -4893,6 +4894,7 @@ model PharmacyPurchaseInvoice {
   invoice_number      String
   vendor_id           Int
   po_id               Int?
+  grn_id              Int?
   invoice_date        DateTime
   due_date            DateTime?
   subtotal            Float     @default(0)
@@ -4913,6 +4915,7 @@ model PharmacyPurchaseInvoice {
   organization Organization              @relation(fields: [organizationId], references: [id])
   vendor       Vendor                    @relation(fields: [vendor_id], references: [id])
   po           PurchaseOrder?            @relation(fields: [po_id], references: [id])
+  grn          GoodsReceiptNote?         @relation(fields: [grn_id], references: [id])
   line_items   PharmacyPurchaseInvoiceLine[]
 
   @@unique([invoice_number, organizationId])
@@ -5096,6 +5099,9 @@ model ItemMaster {
   std_purchase_price   Float        @default(0)
   selling_price        Float        @default(0)
   mrp                  Float        @default(0)
+  pending_std_purchase_price Float?
+  pending_selling_price      Float?
+  pending_mrp                Float?
   is_batch_tracked     Boolean      @default(false)
   is_expiry_tracked    Boolean      @default(false)
   is_patient_chargeable Boolean     @default(false)

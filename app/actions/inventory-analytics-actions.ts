@@ -1,11 +1,11 @@
 'use server';
-import { requireRoleAndTenant } from '@/backend/tenant';
+import { requireInventoryContext } from '@/app/lib/inventory-context';
+import { REPORTS_ROLES, INVENTORY_ADMIN_ROLES, INVENTORY_READ_ROLES } from '@/app/lib/inventory-roles';
 
-// Role groups for inventory analytics operations
-const ANALYTICS_ADMIN_ROLES = ['admin'];
-const ANALYTICS_REPORT_ROLES = ['admin', 'finance', 'pharmacist'];
-const ANALYTICS_DASHBOARD_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager'];
-const ANALYTICS_LOOKUP_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager'];
+const ANALYTICS_ADMIN_ROLES = INVENTORY_ADMIN_ROLES;
+const ANALYTICS_REPORT_ROLES = REPORTS_ROLES;
+const ANALYTICS_DASHBOARD_ROLES = INVENTORY_READ_ROLES;
+const ANALYTICS_LOOKUP_ROLES = INVENTORY_READ_ROLES;
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -18,7 +18,7 @@ function serialize<T>(d: T): T {
 
 export async function computeAbcVedMatrix() {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_ADMIN_ROLES);
+    const { db, organizationId } = await requireInventoryContext(ANALYTICS_ADMIN_ROLES);
     const twelveMthAgo = new Date();
     twelveMthAgo.setFullYear(twelveMthAgo.getFullYear() - 1);
 
@@ -70,7 +70,7 @@ export async function computeAbcVedMatrix() {
 
 export async function getSlowMovingStocks(days = 90) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_REPORT_ROLES);
+    const { db, organizationId } = await requireInventoryContext(ANALYTICS_REPORT_ROLES);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
 
@@ -119,7 +119,7 @@ export async function getSlowMovingStocks(days = 90) {
 
 export async function getExpiryForecast(days = 90) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_REPORT_ROLES);
+    const { db, organizationId } = await requireInventoryContext(ANALYTICS_REPORT_ROLES);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() + days);
 
@@ -159,7 +159,7 @@ export async function getExpiryForecast(days = 90) {
 
 export async function getInventoryDashboardSummary() {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_DASHBOARD_ROLES);
+    const { db, organizationId } = await requireInventoryContext(ANALYTICS_DASHBOARD_ROLES);
     const today = new Date();
     const in30Days = new Date(); in30Days.setDate(today.getDate() + 30);
     const in90Days = new Date(); in90Days.setDate(today.getDate() + 90);
@@ -218,12 +218,89 @@ export async function getInventoryDashboardSummary() {
 }
 
 // ========================================
+// GL Reconciliation (finance)
+// ========================================
+
+export async function reconcileInventoryToGLAction() {
+  try {
+    const { organizationId } = await requireInventoryContext(['admin', 'finance']);
+    const { reconcileInventoryToGL } = await import('./inventory-gl-actions');
+    return reconcileInventoryToGL(organizationId);
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
+// ========================================
 // Barcode / Item Lookup
 // ========================================
 
+export async function getVendorPerformance() {
+  try {
+    const { db, organizationId } = await requireInventoryContext(REPORTS_ROLES);
+    const grns = await db.goodsReceiptNote.findMany({
+      where: { organizationId },
+      include: {
+        vendor: { select: { id: true, vendor_name: true } },
+        items: { select: { quantity_accepted: true, quantity_rejected: true } },
+        purchase_order: { select: { ordered_at: true, approved_at: true } },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 500,
+    });
+
+    const vendorMap = new Map<number, {
+      vendor_name: string;
+      grn_count: number;
+      total_accepted: number;
+      total_rejected: number;
+      lead_times: number[];
+    }>();
+
+    for (const grn of grns) {
+      if (!grn.vendor_id || !grn.vendor) continue;
+      const entry = vendorMap.get(grn.vendor_id) ?? {
+        vendor_name: grn.vendor.vendor_name,
+        grn_count: 0,
+        total_accepted: 0,
+        total_rejected: 0,
+        lead_times: [] as number[],
+      };
+      entry.grn_count += 1;
+      for (const line of grn.items) {
+        entry.total_accepted += line.quantity_accepted;
+        entry.total_rejected += line.quantity_rejected;
+      }
+      if (grn.purchase_order?.ordered_at && grn.created_at) {
+        const days = (grn.created_at.getTime() - new Date(grn.purchase_order.ordered_at).getTime()) / 86400000;
+        if (days >= 0) entry.lead_times.push(days);
+      }
+      vendorMap.set(grn.vendor_id, entry);
+    }
+
+    const performance = Array.from(vendorMap.entries()).map(([vendor_id, v]) => {
+      const total = v.total_accepted + v.total_rejected;
+      return {
+        vendor_id,
+        vendor_name: v.vendor_name,
+        grn_count: v.grn_count,
+        fill_rate_pct: total > 0 ? Math.round((v.total_accepted / total) * 1000) / 10 : 100,
+        rejection_rate_pct: total > 0 ? Math.round((v.total_rejected / total) * 1000) / 10 : 0,
+        avg_lead_time_days: v.lead_times.length
+          ? Math.round(v.lead_times.reduce((a, b) => a + b, 0) / v.lead_times.length)
+          : null,
+      };
+    });
+
+    return { success: true, data: { vendors: performance } };
+  } catch (e: any) {
+    return { success: false, error: e.message, data: { vendors: [] } };
+  }
+}
+
 export async function lookupItemByBarcode(barcode: string) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(ANALYTICS_LOOKUP_ROLES);
+    const { db, organizationId } = await requireInventoryContext(ANALYTICS_LOOKUP_ROLES);
     // Try item master barcode first
     const item = await db.itemMaster.findFirst({
       where: { organizationId, barcode },

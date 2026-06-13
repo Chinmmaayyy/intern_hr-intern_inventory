@@ -197,18 +197,27 @@ export default async function PharmacyInvoiceViewPage({ params }: { params: Prom
 
             {/* ── Toolbar (hidden on print) ── */}
             <div className="toolbar">
-                <script dangerouslySetInnerHTML={{ __html: `
-                    document.addEventListener('DOMContentLoaded', function() {
-                        var btn = document.getElementById('printBtn');
-                        if (btn) btn.onclick = function(){ window.print(); };
-                        var back = document.getElementById('backBtn');
-                        if (back) back.onclick = function(){ window.history.back(); };
-                    });
-                ` }} />
-                <button id="backBtn" style={{ background: 'transparent', color: '#94a3b8', border: '1px solid #475569' }}>
+                <button 
+                    id="backBtn" 
+                    onClick={() => {
+                        if (typeof window !== 'undefined') {
+                            window.history.back();
+                        }
+                    }} 
+                    style={{ background: 'transparent', color: '#94a3b8', border: '1px solid #475569' }}
+                >
                     Back
                 </button>
-                <button id="printBtn">Print / Download PDF</button>
+                <button 
+                    id="printBtn"
+                    onClick={() => {
+                        if (typeof window !== 'undefined') {
+                            window.print();
+                        }
+                    }}
+                >
+                    Print / Download PDF
+                </button>
                 <span className="inv-ref">
                     {invoice.invoice_number}
                 </span>

@@ -33,6 +33,15 @@ const SAMPLE_ROWS: Record<MasterImportType, Record<string, string>> = {
     mrp: '20', purchase_price: '8', selling_price: '15',
     gst_percent: '12', min_threshold: '10', hsn_sac_code: '3004', is_active: 'true',
   },
+  item_master: {
+    item_code: 'CON-0001', name: 'Syringe 5ml', description: 'Disposable syringe 5ml',
+    category: 'Consumables', item_type: 'CONSUMABLE', base_uom: 'EA', purchase_uom: 'BOX',
+    uom_conversion: '100', hsn_sac_code: '9018', gst_rate: '12',
+    std_purchase_price: '2.5', selling_price: '5', mrp: '6',
+    is_batch_tracked: 'true', is_expiry_tracked: 'true', is_patient_chargeable: 'true',
+    is_returnable: 'true', min_level: '100', max_level: '1000',
+    reorder_point: '200', lead_time_days: '7', barcode: '123456789012', is_active: 'true',
+  },
 };
 
 function triggerDownload(buffer: ArrayBuffer, fileName: string) {

@@ -231,7 +231,7 @@ export default function AdminDashboard() {
         return 'bg-rose-500';
     };
 
-    const enabledModuleCount = Object.values(moduleStatuses).filter(Boolean).length;
+    const enabledModuleCount = Object.keys(MODULE_META).filter(key => moduleStatuses[key] !== false).length;
     const totalModules = Object.keys(MODULE_META).length;
 
     return (

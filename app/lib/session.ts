@@ -253,6 +253,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'opd.view',
         'lab.view',
         'pharmacy.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     opd_manager: [
@@ -260,11 +261,20 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'lab.view',
         'pharmacy.view',
         'finance.view',
+        'inventory.view', 'inventory.create',
         'reports.view', 'reports.export',
     ],
     hr: [
         'hr.view', 'hr.create', 'hr.edit', 'hr.approve', 'hr.export',
         'reports.view', 'reports.export',
+    ],
+    store_manager: [
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.approve', 'inventory.export',
+        'reports.view',
+    ],
+    procurement_officer: [
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.export',
+        'reports.view',
     ],
 };
 

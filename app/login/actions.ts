@@ -29,7 +29,7 @@ export async function login(prevState: any, formData: FormData) {
     // ----- DEMO MODE BYPASS -----
     // Bypasses the missing DATABASE_URL issue so the user can view the UI
     if (password === 'admin') {
-        const role = ['doctor', 'receptionist', 'admin', 'hr', 'finance', 'ipd_manager', 'nurse', 'opd_manager', 'lab_technician', 'pharmacist'].includes(username) ? username : 'admin';
+        const role = ['doctor', 'receptionist', 'admin', 'hr', 'finance', 'ipd_manager', 'nurse', 'opd_manager', 'lab_technician', 'pharmacist', 'store_manager', 'procurement_officer'].includes(username) ? username : 'admin';
         await createSession({
             id: 'demo-id',
             username: username,
@@ -52,6 +52,8 @@ export async function login(prevState: any, formData: FormData) {
             case 'nurse': redirect('/nurse/dashboard');
             case 'opd_manager': redirect('/opd-manager/dashboard');
             case 'hr': redirect('/hr/dashboard');
+            case 'store_manager': redirect('/inventory/dashboard');
+            case 'procurement_officer': redirect('/inventory/procurement');
             default: redirect('/admin/dashboard');
         }
     }
@@ -155,6 +157,8 @@ export async function login(prevState: any, formData: FormData) {
         case 'nurse': redirect('/nurse/dashboard');
         case 'opd_manager': redirect('/opd-manager/dashboard');
         case 'hr': redirect('/hr/dashboard');
+        case 'store_manager': redirect('/inventory/dashboard');
+        case 'procurement_officer': redirect('/inventory/procurement');
         default: redirect('/');
     }
 }

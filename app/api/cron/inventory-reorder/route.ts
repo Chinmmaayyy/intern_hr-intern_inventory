@@ -23,6 +23,13 @@ export async function GET(req: NextRequest) {
     let totalIndentsCreated = 0;
 
     for (const org of orgs) {
+      const configRow = await prisma.moduleConfig.findFirst({
+        where: { organizationId: org.id, module_key: 'inventory' }
+      });
+      if (!configRow || !configRow.enabled) {
+        continue;
+      }
+
       const settings = await prisma.storeItemSetting.findMany({
         where: { organizationId: org.id, auto_indent: true },
         include: {
@@ -51,8 +58,56 @@ export async function GET(req: NextRequest) {
 
         const netOnHand = Math.max(0, onHand - quarantined);
 
-        if (netOnHand <= setting.reorder_point) {
-          const suggestedQty = Math.max(setting.max_level - netOnHand, setting.par_level);
+        // Calculate in-transit transfers in
+        const transitTransfers = await prisma.stockTransferItem.findMany({
+          where: {
+            item_id: setting.item_id,
+            transfer: {
+              to_store_id: setting.store_id,
+              status: { in: ['Dispatched', 'In Transit'] },
+              organizationId: org.id
+            }
+          },
+          select: { quantity: true }
+        });
+        const inTransitIn = transitTransfers.reduce((sum, t) => sum + t.quantity, 0);
+
+        // Calculate open supply
+        let openSupply = 0;
+        if (setting.store.parent_store_id) {
+          // Sub-store: Open indents
+          const openIndents = await prisma.indentItem.findMany({
+            where: {
+              item_id: setting.item_id,
+              indent: {
+                from_store_id: setting.store_id,
+                status: { in: ['Submitted', 'Approved', 'Partially Issued'] },
+                organizationId: org.id
+              }
+            },
+            select: { qty_requested: true, qty_received: true }
+          });
+          openSupply = openIndents.reduce((sum, item) => sum + Math.max(0, item.qty_requested - item.qty_received), 0);
+        } else {
+          // Central store: Open POs
+          const openPOs = await prisma.purchaseOrderItem.findMany({
+            where: {
+              item_id: setting.item_id,
+              purchase_order: {
+                receiving_store_id: setting.store_id,
+                status: { in: ['Submitted', 'Approved', 'Partially Received'] },
+                organizationId: org.id
+              }
+            },
+            select: { quantity_ordered: true, quantity_received: true }
+          });
+          openSupply = openPOs.reduce((sum, item) => sum + Math.max(0, item.quantity_ordered - item.quantity_received), 0);
+        }
+
+        const availableStock = netOnHand + inTransitIn + openSupply;
+
+        if (availableStock <= setting.reorder_point) {
+          const suggestedQty = Math.max(setting.max_level - availableStock, setting.par_level);
           const finalQty = suggestedQty > 0 ? suggestedQty : setting.par_level;
 
           if (setting.store.parent_store_id) {

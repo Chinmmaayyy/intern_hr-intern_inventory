@@ -152,6 +152,7 @@ export default function RequisitionsPage() {
             className="bg-white border border-gray-200 rounded-lg text-sm text-gray-700 px-3 py-2 focus:outline-none focus:border-indigo-500 w-full md:w-44"
           >
             <option value="">All Statuses</option>
+            <option value="Submitted">Submitted</option>
             <option value="Draft">Draft</option>
             <option value="Approved">Approved</option>
             <option value="PO Created">PO Created</option>
@@ -198,9 +199,10 @@ export default function RequisitionsPage() {
                   <td className="py-3.5 px-4 font-semibold text-gray-900">{req.store?.name}</td>
                   <td className="py-3.5 px-4">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                      req.status === 'Draft' ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' :
-                      req.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
-                      req.status === 'PO Created' ? 'bg-teal-50 text-teal-600 border border-teal-200' :
+                      req.status === 'Submitted' ? 'bg-blue-55 text-blue-700 border border-blue-100' :
+                      req.status === 'Draft' ? 'bg-indigo-55 text-indigo-700 border border-indigo-100' :
+                      req.status === 'Approved' ? 'bg-emerald-55 text-emerald-700 border border-emerald-100' :
+                      req.status === 'PO Created' ? 'bg-teal-55 text-teal-700 border border-teal-100' :
                       'bg-gray-100 text-gray-500'
                     }`}>
                       {req.status}
@@ -388,7 +390,7 @@ export default function RequisitionsPage() {
                 </div>
               </div>
 
-              {selectedReq.status === 'Draft' && (
+              {(selectedReq.status === 'Submitted' || selectedReq.status === 'Draft') && (
                 <button
                   onClick={() => handleApproveRequisition(selectedReq.id)}
                   disabled={approving}

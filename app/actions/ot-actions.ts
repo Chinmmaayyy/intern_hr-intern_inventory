@@ -656,19 +656,121 @@ export async function addSurgeryConsumable(input: {
 }) {
   try {
     const { db } = await requireTenantContext();
-    const item = await db.surgeryConsumable.create({
-      data: {
-        surgery_request_id: input.surgery_request_id,
-        item_name: input.item_name,
-        item_code: input.item_code ?? null,
-        quantity: input.quantity ?? 1,
-        unit_price: input.unit_price ?? null,
-        is_implant: input.is_implant ?? false,
-        batch_no: input.batch_no ?? null,
-        serial_no: input.serial_no ?? null,
-      },
+    
+    // Find organization id
+    const surgeryRequest = await db.surgeryRequest.findUnique({
+      where: { id: input.surgery_request_id },
+      select: { organizationId: true }
     });
-    return { success: true, data: serialize(item) };
+    const organizationId = surgeryRequest?.organizationId;
+    if (!organizationId) throw new Error('Surgery request organization context not found');
+
+    // Find the OT store (store_type = 'OT') for this organization
+    const otStore = await db.store.findFirst({
+      where: { store_type: 'OT', organizationId, is_active: true },
+      select: { id: true, name: true }
+    });
+    const storeId = otStore?.id ?? 1; // fallback to store 1 if not found
+
+    const result = await db.$transaction(async (tx: any) => {
+      // Find item
+      let resolvedItem = null;
+      if (input.item_code) {
+        resolvedItem = await tx.itemMaster.findFirst({
+          where: { item_code: input.item_code, organizationId }
+        });
+      }
+      if (!resolvedItem) {
+        resolvedItem = await tx.itemMaster.findFirst({
+          where: { name: { equals: input.item_name, mode: 'insensitive' }, organizationId }
+        });
+      }
+
+      let itemId = resolvedItem?.id ?? null;
+      let movementId = null;
+      let unitPrice = input.unit_price ?? resolvedItem?.selling_price ?? resolvedItem?.mrp ?? 0;
+
+      if (resolvedItem) {
+        // Decrement stock in OT store
+        const stock = await tx.storeStock.findFirst({
+          where: { store_id: storeId, item_id: resolvedItem.id, organizationId }
+        });
+        
+        const qty = input.quantity ?? 1;
+        
+        if (stock && stock.quantity_on_hand >= qty) {
+          await tx.storeStock.update({
+            where: { id: stock.id },
+            data: { quantity_on_hand: { decrement: qty } }
+          });
+
+          // Create inventory movement
+          const m = await tx.inventoryMovement.create({
+            data: {
+              organizationId,
+              store_id: storeId,
+              item_id: resolvedItem.id,
+              batch_id: stock.batch_id,
+              movement_type: 'CONSUMPTION',
+              quantity_in: 0,
+              quantity_out: qty,
+              unit_cost: stock.avg_unit_cost,
+              value: qty * stock.avg_unit_cost,
+              balance_after: stock.quantity_on_hand - qty,
+              source_type: 'SURGERY',
+              source_id: input.surgery_request_id,
+              cost_center: otStore?.name || 'OT Store',
+              user_id: null,
+              reason: 'Surgery consumption'
+            }
+          });
+          movementId = m.id;
+
+          // Post to GL consumption (COGS)
+          try {
+            const { postConsumptionToGL } = await import('./inventory-gl-actions');
+            const glRes = await postConsumptionToGL({
+              organizationId,
+              item_id: resolvedItem.id,
+              quantity: qty,
+              unit_cost: stock.avg_unit_cost,
+              store_id: storeId,
+              source_id: input.surgery_request_id,
+              description: `Surgery consumption of ${resolvedItem.name}`,
+              is_patient_chargeable: resolvedItem.is_patient_chargeable
+            });
+            if (glRes.success && glRes.journalId) {
+              await tx.inventoryMovement.update({
+                where: { id: m.id },
+                data: { gl_journal_id: glRes.journalId }
+              });
+            }
+          } catch (glErr: any) {
+            console.error('OT surgery GL posting failed:', glErr.message);
+          }
+        }
+      }
+
+      const consumable = await tx.surgeryConsumable.create({
+        data: {
+          surgery_request_id: input.surgery_request_id,
+          item_name: input.item_name,
+          item_code: input.item_code ?? resolvedItem?.item_code ?? null,
+          quantity: input.quantity ?? 1,
+          unit_price: unitPrice,
+          is_implant: input.is_implant ?? false,
+          batch_no: input.batch_no ?? null,
+          serial_no: input.serial_no ?? null,
+          item_id: itemId,
+          store_id: storeId,
+          movement_id: movementId,
+        },
+      });
+
+      return consumable;
+    });
+
+    return { success: true, data: serialize(result) };
   } catch (error: any) {
     return { success: false, error: error?.message };
   }

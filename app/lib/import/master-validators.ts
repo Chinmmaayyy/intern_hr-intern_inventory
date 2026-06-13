@@ -6,7 +6,9 @@ export type MasterImportType =
   | 'service_master'
   | 'lab_test_master'
   | 'package_master'
-  | 'medicine_master';
+  | 'medicine_master'
+  | 'item_master';
+
 
 export const MASTER_IMPORT_MAX_ROWS = 500;
 
@@ -232,15 +234,125 @@ export function validateMedicineRows(rows: Record<string, unknown>[]): ValidateR
   return { valid, errors };
 }
 
+export interface ItemMasterRow {
+  item_code?: string | null;
+  name: string;
+  description?: string | null;
+  category: string;
+  item_type: 'CONSUMABLE' | 'REAGENT' | 'IMPLANT' | 'LINEN' | 'STATIONERY' | 'MAINTENANCE' | 'EQUIPMENT_SPARE' | 'FOOD_DIETARY' | 'OTHER';
+  base_uom: string;
+  purchase_uom: string;
+  uom_conversion: number;
+  hsn_sac_code?: string | null;
+  gst_rate: number;
+  std_purchase_price: number;
+  selling_price: number;
+  mrp: number;
+  is_batch_tracked: boolean;
+  is_expiry_tracked: boolean;
+  is_patient_chargeable: boolean;
+  is_returnable: boolean;
+  min_level: number;
+  max_level: number;
+  reorder_point: number;
+  lead_time_days: number;
+  barcode?: string | null;
+  is_active: boolean;
+}
+
+export function validateItemMasterRows(rows: Record<string, unknown>[]): ValidateResult<ItemMasterRow> {
+  const valid: ItemMasterRow[] = [];
+  const errors: RowError[] = [];
+  const validTypes = ['CONSUMABLE','REAGENT','IMPLANT','LINEN','STATIONERY','MAINTENANCE','EQUIPMENT_SPARE','FOOD_DIETARY','OTHER'];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const rowNum = i + 1;
+    const errs: string[] = [];
+    
+    const name = str(r.name); if (!name) errs.push('name is required');
+    const category = str(r.category); if (!category) errs.push('category is required');
+    
+    const item_type = (str(r.item_type) || '').toUpperCase();
+    if (!item_type) {
+      errs.push('item_type is required');
+    } else if (!validTypes.includes(item_type)) {
+      errs.push(`item_type must be one of: ${validTypes.join(', ')}`);
+    }
+
+    const base_uom = str(r.base_uom); if (!base_uom) errs.push('base_uom is required');
+    const purchase_uom = str(r.purchase_uom); if (!purchase_uom) errs.push('purchase_uom is required');
+
+    const uomConv = toNum(r.uom_conversion ?? 1, 'uom_conversion');
+    if (typeof uomConv === 'string') errs.push(uomConv);
+
+    const gstRate = toNum(r.gst_rate ?? 0, 'gst_rate');
+    if (typeof gstRate === 'string') errs.push(gstRate);
+
+    const stdPrice = toNum(r.std_purchase_price ?? 0, 'std_purchase_price');
+    if (typeof stdPrice === 'string') errs.push(stdPrice);
+
+    const sellPrice = toNum(r.selling_price ?? 0, 'selling_price');
+    if (typeof sellPrice === 'string') errs.push(sellPrice);
+
+    const mrp = toNum(r.mrp ?? 0, 'mrp');
+    if (typeof mrp === 'string') errs.push(mrp);
+
+    const minLevel = toNum(r.min_level ?? 0, 'min_level');
+    if (typeof minLevel === 'string') errs.push(minLevel);
+
+    const maxLevel = toNum(r.max_level ?? 0, 'max_level');
+    if (typeof maxLevel === 'string') errs.push(maxLevel);
+
+    const rop = toNum(r.reorder_point ?? 0, 'reorder_point');
+    if (typeof rop === 'string') errs.push(rop);
+
+    const leadTime = toNum(r.lead_time_days ?? 0, 'lead_time_days');
+    if (typeof leadTime === 'string') errs.push(leadTime);
+
+    if (errs.length > 0) {
+      errors.push({ rowIndex: rowNum, reason: errs.join('; '), originalData: r });
+      continue;
+    }
+
+    valid.push({
+      item_code: optStr(r.item_code),
+      name,
+      description: optStr(r.description),
+      category,
+      item_type: item_type as any,
+      base_uom,
+      purchase_uom,
+      uom_conversion: uomConv as number,
+      hsn_sac_code: optStr(r.hsn_sac_code),
+      gst_rate: gstRate as number,
+      std_purchase_price: stdPrice as number,
+      selling_price: sellPrice as number,
+      mrp: mrp as number,
+      is_batch_tracked: parseBool(r.is_batch_tracked),
+      is_expiry_tracked: parseBool(r.is_expiry_tracked),
+      is_patient_chargeable: parseBool(r.is_patient_chargeable),
+      is_returnable: parseBool(r.is_returnable ?? true),
+      min_level: Math.round(minLevel as number),
+      max_level: Math.round(maxLevel as number),
+      reorder_point: Math.round(rop as number),
+      lead_time_days: Math.round(leadTime as number),
+      barcode: optStr(r.barcode),
+      is_active: parseBool(r.is_active ?? true),
+    });
+  }
+  return { valid, errors };
+}
+
 export function validateMasterRows(
   type: MasterImportType,
   rows: Record<string, unknown>[],
-): ValidateResult<DoctorRow | ServiceRow | LabTestRow | PackageRow | MedicineRow> {
+): ValidateResult<DoctorRow | ServiceRow | LabTestRow | PackageRow | MedicineRow | ItemMasterRow> {
   switch (type) {
     case 'doctor_master': return validateDoctorRows(rows);
     case 'service_master': return validateServiceRows(rows);
     case 'lab_test_master': return validateLabTestRows(rows);
     case 'package_master': return validatePackageRows(rows);
     case 'medicine_master': return validateMedicineRows(rows);
+    case 'item_master': return validateItemMasterRows(rows);
   }
 }

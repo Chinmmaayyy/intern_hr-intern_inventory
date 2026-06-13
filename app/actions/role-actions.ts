@@ -14,6 +14,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'insurance.view', 'insurance.create', 'insurance.edit', 'insurance.delete', 'insurance.approve', 'insurance.export',
         'hr.view', 'hr.create', 'hr.edit', 'hr.delete', 'hr.approve', 'hr.export',
         'admin.view', 'admin.create', 'admin.edit', 'admin.delete', 'admin.approve', 'admin.export',
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete', 'inventory.approve', 'inventory.export', 'inventory.config',
         'reports.view', 'reports.export',
     ],
     doctor: [
@@ -23,26 +24,31 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'pharmacy.view',
         'finance.view',
         'insurance.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     receptionist: [
         'opd.view', 'opd.create', 'opd.edit',
-        'ipd.view',
+        'ipd.view', 'ipd.create', 'ipd.edit',
         'finance.view', 'finance.create',
         'insurance.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     lab_technician: [
         'lab.view', 'lab.create', 'lab.edit',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     pharmacist: [
         'pharmacy.view', 'pharmacy.create', 'pharmacy.edit',
+        'inventory.view', 'inventory.create', 'inventory.edit',
         'reports.view',
     ],
     finance: [
         'finance.view', 'finance.create', 'finance.edit', 'finance.approve', 'finance.export',
         'insurance.view', 'insurance.create', 'insurance.edit',
+        'inventory.view', 'inventory.approve', 'inventory.export',
         'reports.view', 'reports.export',
     ],
     ipd_manager: [
@@ -51,6 +57,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'lab.view',
         'pharmacy.view',
         'finance.view',
+        'inventory.view', 'inventory.create',
         'reports.view', 'reports.export',
     ],
     nurse: [
@@ -58,6 +65,7 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'opd.view',
         'lab.view',
         'pharmacy.view',
+        'inventory.view', 'inventory.create',
         'reports.view',
     ],
     opd_manager: [
@@ -65,11 +73,20 @@ const SYSTEM_ROLE_PERMISSIONS: Record<string, string[]> = {
         'lab.view',
         'pharmacy.view',
         'finance.view',
+        'inventory.view', 'inventory.create',
         'reports.view', 'reports.export',
     ],
     hr: [
         'hr.view', 'hr.create', 'hr.edit', 'hr.approve', 'hr.export',
         'reports.view', 'reports.export',
+    ],
+    store_manager: [
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.approve', 'inventory.export',
+        'reports.view',
+    ],
+    procurement_officer: [
+        'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.export',
+        'reports.view',
     ],
 };
 
@@ -129,6 +146,14 @@ const ALL_PERMISSIONS = [
     { key: 'admin.delete', module: 'admin', action: 'delete', label: 'Delete Admin Items' },
     { key: 'admin.approve', module: 'admin', action: 'approve', label: 'Approve Admin Actions' },
     { key: 'admin.export', module: 'admin', action: 'export', label: 'Export Admin Data' },
+
+    { key: 'inventory.view', module: 'inventory', action: 'view', label: 'View Inventory' },
+    { key: 'inventory.create', module: 'inventory', action: 'create', label: 'Create Inventory Items/Indents' },
+    { key: 'inventory.edit', module: 'inventory', action: 'edit', label: 'Edit Inventory Items/Indents' },
+    { key: 'inventory.delete', module: 'inventory', action: 'delete', label: 'Delete Inventory Data' },
+    { key: 'inventory.approve', module: 'inventory', action: 'approve', label: 'Approve Indents/Counts' },
+    { key: 'inventory.export', module: 'inventory', action: 'export', label: 'Export Inventory Reports' },
+    { key: 'inventory.config', module: 'inventory', action: 'config', label: 'Manage Inventory Config' },
 
     { key: 'reports.view', module: 'reports', action: 'view', label: 'View Reports' },
     { key: 'reports.export', module: 'reports', action: 'export', label: 'Export Reports' },

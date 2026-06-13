@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
 import { listItems, listItemCategories, approveItem, discontinueItem, createItem } from '@/app/actions/item-master-actions';
+import MasterImportButton from '@/app/components/master/MasterImportButton';
 import { AdminPage } from '@/app/admin/components/AdminPage';
 import {
   Search, Plus, Filter, Package, CheckCircle, XCircle,
@@ -53,7 +54,7 @@ export default function ItemsPage() {
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [itemType, setItemType] = useState('');
-  const [status, setStatus] = useState('Active');
+  const [status, setStatus] = useState('');
   const [abcClass, setAbcClass] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
@@ -150,11 +151,7 @@ export default function ItemsPage() {
             <Filter className="h-4 w-4" />
             Filters
           </button>
-          <Link href="/admin/data-import"
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl text-sm transition-colors">
-            <Download className="h-4 w-4" />
-            Import
-          </Link>
+          <MasterImportButton type="item_master" onImportComplete={load} />
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-medium transition-colors">

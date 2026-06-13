@@ -1,15 +1,17 @@
 'use server';
-import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { postChargeToIpdBill } from '@/app/actions/ipd-finance-actions';
 import { postConsumptionToGL, postAdjustmentToGL } from '@/app/actions/inventory-gl-actions';
+import { requireInventoryContext } from '@/app/lib/inventory-context';
 
-// Role groups for inventory stock operations
-const STOCK_READ_ROLES = ['admin', 'finance', 'pharmacist'];
-const STOCK_WRITE_ROLES = ['admin', 'pharmacist'];
-const STOCK_APPROVE_ROLES = ['admin', 'finance'];
-const STOCK_CONSUMPTION_ROLES = ['admin', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
+import {
+  GRN_READ_ROLES as STOCK_READ_ROLES,
+  GRN_WRITE_ROLES as STOCK_WRITE_ROLES,
+  COUNT_APPROVE_ROLES as STOCK_APPROVE_ROLES,
+  CONSUMPTION_ROLES as STOCK_CONSUMPTION_ROLES,
+  WRITE_OFF_APPROVE_ROLES,
+} from '@/app/lib/inventory-roles';
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -35,7 +37,7 @@ const transferSchema = z.object({
 
 export async function listTransfers(opts?: { status?: string; page?: number; limit?: number }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 20;
     const where: any = { organizationId };
@@ -60,9 +62,14 @@ export async function listTransfers(opts?: { status?: string; page?: number; lim
 
 export async function createStoreTransfer(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_WRITE_ROLES);
     const data = transferSchema.parse(input);
     const transferNumber = `TRF-${Date.now()}`;
+
+    const fromStore = await db.store.findFirst({ where: { id: data.from_store_id, organizationId } });
+    const toStore = await db.store.findFirst({ where: { id: data.to_store_id, organizationId } });
+    if (!fromStore || !toStore) return { success: false, error: 'Store not found' };
+    const isInterBranch = fromStore.branch_id !== toStore.branch_id;
 
     const transfer = await db.$transaction(async (tx: any) => {
       const t = await tx.stockTransfer.create({
@@ -70,9 +77,10 @@ export async function createStoreTransfer(input: unknown) {
           transfer_number: transferNumber,
           from_store_id: data.from_store_id,
           to_store_id: data.to_store_id,
-          status: 'Dispatched',
+          status: isInterBranch ? 'In Transit' : 'Received',
           dispatch_user_id: session.id,
           dispatch_at: new Date(),
+          received_at: isInterBranch ? null : new Date(),
           organizationId,
           items: { create: data.items },
         },
@@ -80,7 +88,6 @@ export async function createStoreTransfer(input: unknown) {
       });
 
       for (const line of data.items) {
-        // Deduct from source store
         const srcStock = await tx.storeStock.findFirst({
           where: { store_id: data.from_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null, organizationId },
         });
@@ -104,38 +111,105 @@ export async function createStoreTransfer(input: unknown) {
           },
         });
 
-        // Credit to destination store
-        const dstStock = await tx.storeStock.findFirst({
-          where: { store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null },
-        });
-        const newDstQty = (dstStock?.quantity_on_hand ?? 0) + line.quantity;
-        if (dstStock) {
-          await tx.storeStock.update({
-            where: { id: dstStock.id },
-            data: { quantity_on_hand: newDstQty },
+        if (!isInterBranch) {
+          const dstStock = await tx.storeStock.findFirst({
+            where: { store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null },
           });
-        } else {
-          await tx.storeStock.create({
-            data: { store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null, quantity_on_hand: line.quantity, avg_unit_cost: unitCost, organizationId },
+          const newDstQty = (dstStock?.quantity_on_hand ?? 0) + line.quantity;
+          if (dstStock) {
+            await tx.storeStock.update({
+              where: { id: dstStock.id },
+              data: { quantity_on_hand: newDstQty },
+            });
+          } else {
+            await tx.storeStock.create({
+              data: { store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null, quantity_on_hand: line.quantity, avg_unit_cost: unitCost, organizationId },
+            });
+          }
+          await tx.inventoryMovement.create({
+            data: {
+              organizationId, store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null,
+              movement_type: 'TRANSFER_IN',
+              quantity_in: line.quantity, quantity_out: 0,
+              unit_cost: unitCost, value: line.quantity * unitCost,
+              balance_after: newDstQty,
+              source_type: 'TRANSFER', source_id: t.id.toString(),
+              user_id: session.id,
+            },
           });
         }
-        await tx.inventoryMovement.create({
-          data: {
-            organizationId, store_id: data.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null,
-            movement_type: 'TRANSFER_IN',
-            quantity_in: line.quantity, quantity_out: 0,
-            unit_cost: unitCost, value: line.quantity * unitCost,
-            balance_after: newDstQty,
-            source_type: 'TRANSFER', source_id: t.id.toString(),
-            user_id: session.id,
-          },
-        });
       }
       return t;
     });
 
     revalidatePath('/admin/inventory/transfers');
+    revalidatePath('/inventory/transfers');
     return { success: true, data: serialize(transfer) };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
+export async function receiveTransfer(transfer_id: number) {
+  try {
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_WRITE_ROLES);
+    const transfer = await db.stockTransfer.findFirst({
+      where: { id: transfer_id, organizationId },
+      include: { items: true, from_store: true, to_store: true },
+    });
+    if (!transfer) return { success: false, error: 'Transfer not found' };
+    if (transfer.status !== 'In Transit') return { success: false, error: 'Transfer is not in transit' };
+
+    await db.$transaction(async (tx: any) => {
+      for (const line of transfer.items) {
+        const issueMov = await tx.inventoryMovement.findFirst({
+          where: {
+            organizationId,
+            store_id: transfer.from_store_id,
+            item_id: line.item_id,
+            movement_type: 'TRANSFER_OUT',
+            source_type: 'TRANSFER',
+            source_id: transfer.id.toString(),
+          },
+          orderBy: { created_at: 'desc' },
+        });
+        const unitCost = issueMov?.unit_cost ?? line.unit_cost ?? 0;
+
+        const dstStock = await tx.storeStock.findFirst({
+          where: { store_id: transfer.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null, organizationId },
+        });
+        const newDstQty = (dstStock?.quantity_on_hand ?? 0) + line.quantity;
+        if (dstStock) {
+          await tx.storeStock.update({ where: { id: dstStock.id }, data: { quantity_on_hand: newDstQty } });
+        } else {
+          await tx.storeStock.create({
+            data: {
+              store_id: transfer.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null,
+              quantity_on_hand: line.quantity, avg_unit_cost: unitCost, organizationId,
+            },
+          });
+        }
+        await tx.inventoryMovement.create({
+          data: {
+            organizationId, store_id: transfer.to_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null,
+            movement_type: 'TRANSFER_IN',
+            quantity_in: line.quantity, quantity_out: 0,
+            unit_cost: unitCost, value: line.quantity * unitCost,
+            balance_after: newDstQty,
+            source_type: 'TRANSFER', source_id: transfer.id.toString(),
+            user_id: session.id,
+          },
+        });
+      }
+      await tx.stockTransfer.update({
+        where: { id: transfer_id },
+        data: { status: 'Received', receive_user_id: session.id, received_at: new Date() },
+      });
+    });
+
+    revalidatePath('/admin/inventory/transfers');
+    revalidatePath('/inventory/transfers');
+    return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
   }
@@ -147,7 +221,7 @@ export async function createStoreTransfer(input: unknown) {
 
 export async function listCountSessions(opts?: { store_id?: number; status?: string }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.store_id) where.store_id = opts.store_id;
     if (opts?.status) where.status = opts.status;
@@ -163,7 +237,7 @@ export async function listCountSessions(opts?: { store_id?: number; status?: str
 
 export async function getStockCountSessionById(id: number) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
     const session = await db.stockCountSession.findFirst({
       where: { id, organizationId },
       include: {
@@ -185,7 +259,7 @@ export async function getStockCountSessionById(id: number) {
 
 export async function createStockCountSession(store_id: number) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_WRITE_ROLES);
     const sessionNumber = `CNT-${Date.now()}`;
     // Snapshot current book quantities
     const stocks = await db.storeStock.findMany({
@@ -218,7 +292,7 @@ export async function createStockCountSession(store_id: number) {
 
 export async function updateCountLine(session_id: number, line_id: number, counted_qty: number) {
   try {
-    const { db } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
+    const { db } = await requireInventoryContext(STOCK_WRITE_ROLES);
     const line = await db.stockCountLine.update({
       where: { id: line_id } as any,
       data: { counted_qty },
@@ -231,13 +305,39 @@ export async function updateCountLine(session_id: number, line_id: number, count
 
 export async function approveCountSession(session_id: number) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_APPROVE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_APPROVE_ROLES);
 
     const countSession = await db.stockCountSession.findFirst({
       where: { id: session_id, organizationId },
       include: { lines: true },
     });
     if (!countSession) return { success: false, error: 'Count session not found' };
+
+    // Tolerance-based check for store_manager
+    const configRow = await db.moduleConfig.findFirst({
+      where: { organizationId, module_key: 'inventory' }
+    });
+    const tolerance = (configRow?.config_json as any)?.adjustment_tolerance_pct ?? 2.0; // percent e.g. 2%
+
+    let exceedsTolerance = false;
+    for (const line of countSession.lines) {
+      const variance = line.counted_qty - line.book_qty;
+      if (variance === 0) continue;
+      const varPct = (Math.abs(variance) / (line.book_qty || 1)) * 100;
+      if (varPct > tolerance) {
+        exceedsTolerance = true;
+        break;
+      }
+    }
+
+    if (exceedsTolerance && session.role === 'store_manager') {
+      await db.stockCountSession.update({
+        where: { id: session_id },
+        data: { status: 'Pending Approval' }
+      });
+      revalidatePath('/admin/inventory/counts');
+      return { success: true, pendingFinance: true, message: `Count variance exceeds tolerance of ${tolerance}%. Submitted for Finance Approval.` };
+    }
 
     const adjustmentLines: Array<{ item_id: number; quantity_delta: number; unit_cost: number; source_id: string }> = [];
 
@@ -337,7 +437,7 @@ export async function getStockLedger(opts: {
   limit?: number;
 }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
     const page = opts.page ?? 1;
     const limit = opts.limit ?? 50;
     const where: any = { organizationId };
@@ -369,7 +469,7 @@ export async function getStockLedger(opts: {
 
 export async function quarantineBatch(batch_id: number, is_quarantined = true) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_WRITE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_WRITE_ROLES);
     const batch = await db.itemBatch.update({
       where: { id: batch_id, organizationId },
       data: { is_quarantined },
@@ -386,7 +486,7 @@ export async function quarantineBatch(batch_id: number, is_quarantined = true) {
 
 export async function listItemBatches(opts?: { search?: string }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) {
       where.batch_no = { contains: opts.search, mode: 'insensitive' };
@@ -409,11 +509,12 @@ export async function recordConsumption(input: {
   quantity: number;
   type: 'PATIENT' | 'DEPARTMENT';
   admission_id?: string | null;
+  patient_id?: string | null;
   cost_center?: string | null;
   reason?: string | null;
 }) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(STOCK_CONSUMPTION_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(STOCK_CONSUMPTION_ROLES);
     
     // Verify inputs
     const store = await db.store.findFirst({ where: { id: input.store_id, organizationId } });
@@ -422,8 +523,8 @@ export async function recordConsumption(input: {
     const item = await db.itemMaster.findFirst({ where: { id: input.item_id, organizationId } });
     if (!item) return { success: false, error: 'Item not found' };
 
-    if (input.type === 'PATIENT' && !input.admission_id) {
-      return { success: false, error: 'Admission ID is required for patient consumption' };
+    if (input.type === 'PATIENT' && !input.admission_id && !input.patient_id) {
+      return { success: false, error: 'Admission ID or Patient ID is required for patient consumption' };
     }
 
     const result = await db.$transaction(async (tx: any) => {
@@ -466,7 +567,7 @@ export async function recordConsumption(input: {
           source_type: input.type === 'PATIENT' ? 'PATIENT' : 'DEPARTMENT',
           source_id: `CONS-${Date.now()}`,
           cost_center: input.cost_center || store.cost_center,
-          patient_id: null,
+          patient_id: input.patient_id ?? null,
           admission_id: input.admission_id ?? null,
           user_id: session.id,
           reason: input.reason ?? null
@@ -477,15 +578,50 @@ export async function recordConsumption(input: {
     });
 
     // Post charge to patient bill if patient chargeable
-    if (input.type === 'PATIENT' && item.is_patient_chargeable && input.admission_id) {
-      await postChargeToIpdBill({
-        admission_id: input.admission_id,
-        source_module: 'inventory',
-        source_ref_id: result.movement.id.toString(),
-        description: `Consumable: ${item.name}`,
-        quantity: input.quantity,
-        unit_price: item.selling_price || item.mrp || 0
-      });
+    if (input.type === 'PATIENT' && item.is_patient_chargeable) {
+      if (input.admission_id) {
+        // IPD path
+        await postChargeToIpdBill({
+          admission_id: input.admission_id,
+          source_module: 'inventory',
+          source_ref_id: result.movement.id.toString(),
+          description: `Consumable: ${item.name}`,
+          quantity: input.quantity,
+          unit_price: item.selling_price || item.mrp || 0
+        });
+      } else if (input.patient_id) {
+        // OPD path
+        const { createInvoice, addInvoiceItem } = await import('./finance-actions');
+        
+        let invoice = await db.invoices.findFirst({
+          where: { patient_id: input.patient_id, status: 'Draft', invoice_type: 'OPD', organizationId }
+        });
+        
+        let invoiceId = invoice?.id;
+        
+        if (!invoiceId) {
+          const invRes = await createInvoice({
+            patient_id: input.patient_id,
+            invoice_type: 'OPD',
+            notes: 'Consumables charging'
+          });
+          if (invRes.success) {
+            invoiceId = (invRes as any).data?.id;
+          }
+        }
+        
+        if (invoiceId) {
+          await addInvoiceItem({
+            invoice_id: invoiceId,
+            department: 'Pharmacy',
+            description: item.name,
+            quantity: input.quantity,
+            unit_price: item.selling_price || item.mrp || 0,
+            tax_rate: item.gst_rate || 0,
+            service_category: 'Consumable'
+          });
+        }
+      }
     }
 
     // Post to GL
@@ -496,7 +632,8 @@ export async function recordConsumption(input: {
       unit_cost: result.avgUnitCost,
       store_id: input.store_id,
       source_id: result.movement.source_id,
-      description: `Consumption of ${item.name} from ${store.name}`
+      description: `Consumption of ${item.name} from ${store.name}`,
+      is_patient_chargeable: item.is_patient_chargeable
     });
 
     if (glRes.success && glRes.journalId) {
@@ -515,6 +652,87 @@ export async function recordConsumption(input: {
         user_id: session.id,
         username: session.username,
         role: session.role
+      }
+    });
+
+    revalidatePath('/admin/inventory/adjustments');
+    return { success: true, movementId: result.movement.id };
+  } catch (e: any) {
+    return { success: false, error: e.message };
+  }
+}
+
+export async function recordWriteOff(batchId: number, quantity: number, reason: string) {
+  try {
+    const { db, organizationId, session } = await requireInventoryContext(WRITE_OFF_APPROVE_ROLES);
+    
+    // Verify batch
+    const batch = await db.itemBatch.findUnique({
+      where: { id: batchId, organizationId },
+      include: { item: true }
+    });
+    if (!batch) return { success: false, error: 'Batch not found' };
+
+    // Verify stock exists in store
+    const storeStock = await db.storeStock.findFirst({
+      where: { batch_id: batchId, organizationId }
+    });
+    if (!storeStock || storeStock.quantity_on_hand < quantity) {
+      return { success: false, error: `Insufficient stock in batch. Available: ${storeStock?.quantity_on_hand ?? 0}` };
+    }
+
+    const result = await db.$transaction(async (tx: any) => {
+      const newQty = storeStock.quantity_on_hand - quantity;
+      await tx.storeStock.update({
+        where: { id: storeStock.id },
+        data: { quantity_on_hand: newQty }
+      });
+
+      const movement = await tx.inventoryMovement.create({
+        data: {
+          organizationId,
+          store_id: storeStock.store_id,
+          item_id: batch.item_id,
+          batch_id: batchId,
+          movement_type: 'DAMAGE_WRITEOFF',
+          quantity_in: 0,
+          quantity_out: quantity,
+          unit_cost: batch.cost_price || storeStock.avg_unit_cost || 0,
+          value: quantity * (batch.cost_price || storeStock.avg_unit_cost || 0),
+          balance_after: newQty,
+          source_type: 'ADJUSTMENT',
+          source_id: `WO-${Date.now()}`,
+          cost_center: 'Quarantine',
+          user_id: session.id,
+          reason: reason
+        }
+      });
+      return { movement, cost: batch.cost_price || storeStock.avg_unit_cost || 0, store_id: storeStock.store_id };
+    });
+
+    // Post to GL
+    const { postWriteOffToGL } = await import('./inventory-gl-actions');
+    const glRes = await postWriteOffToGL({
+      organizationId,
+      item_id: batch.item_id,
+      quantity,
+      unit_cost: result.cost,
+      source_id: result.movement.source_id,
+      reason
+    });
+
+    if (glRes.success && glRes.journalId) {
+      await db.inventoryMovement.update({
+        where: { id: result.movement.id },
+        data: { gl_journal_id: glRes.journalId }
+      });
+    }
+
+    await db.system_audit_logs.create({
+      data: {
+        action: 'RECORD_WRITEOFF', module: 'inventory',
+        details: `Recorded write-off of ${quantity} items from batch ${batch.batch_no}: ${reason}`,
+        organizationId, user_id: session.id, username: session.username, role: session.role
       }
     });
 

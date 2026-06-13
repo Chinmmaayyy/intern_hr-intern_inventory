@@ -1,12 +1,15 @@
 'use server';
-import { requireRoleAndTenant } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { requireInventoryContext } from '@/app/lib/inventory-context';
 
-// Role groups for inventory item master operations
-const INVENTORY_READ_ROLES = ['admin', 'finance', 'pharmacist', 'lab_technician', 'ipd_manager', 'doctor', 'receptionist'];
-const INVENTORY_ADMIN_ROLES = ['admin'];
-const INVENTORY_CATEGORY_ROLES = ['admin', 'finance'];
+import {
+  INVENTORY_READ_ROLES,
+  INVENTORY_ADMIN_ROLES,
+  INVENTORY_CATEGORY_ROLES,
+  ITEM_CREATE_ROLES,
+  ITEM_APPROVE_ROLES
+} from '@/app/lib/inventory-roles';
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -28,7 +31,7 @@ const itemCategorySchema = z.object({
 });
 
 const itemMasterSchema = z.object({
-  item_code: z.string().min(1),
+  item_code: z.string().optional().nullable(),
   name: z.string().min(1),
   description: z.string().optional().nullable(),
   category_id: z.number().int().positive(),
@@ -71,7 +74,7 @@ const itemVendorSchema = z.object({
 
 export async function listItemCategories(opts?: { search?: string }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const where: any = { organizationId };
     if (opts?.search?.trim()) {
       where.name = { contains: opts.search, mode: 'insensitive' };
@@ -93,7 +96,7 @@ export async function listItemCategories(opts?: { search?: string }) {
 
 export async function createItemCategory(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_CATEGORY_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_CATEGORY_ROLES);
     const data = itemCategorySchema.parse(input);
     const row = await db.itemCategory.create({
       data: { ...data, organizationId },
@@ -114,7 +117,7 @@ export async function createItemCategory(input: unknown) {
 
 export async function updateItemCategory(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_CATEGORY_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_CATEGORY_ROLES);
     const data = itemCategorySchema.partial().parse(input);
     const row = await db.itemCategory.update({
       where: { id } as any,
@@ -148,7 +151,7 @@ export async function listItems(opts?: {
   limit?: number;
 }) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 25;
     const where: any = { organizationId };
@@ -196,7 +199,7 @@ export async function listItems(opts?: {
 
 export async function getItemById(id: number) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_READ_ROLES);
     const item = await db.itemMaster.findFirst({
       where: { id, organizationId },
       include: {
@@ -229,19 +232,50 @@ export async function getItemById(id: number) {
 
 export async function createItem(input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(ITEM_CREATE_ROLES);
     const data = itemMasterSchema.parse(input);
-    const existing = await db.itemMaster.findFirst({
-      where: { item_code: data.item_code, organizationId },
+
+    // Duplicate detection: name + base_uom
+    const duplicate = await db.itemMaster.findFirst({
+      where: {
+        name: { equals: data.name.trim(), mode: 'insensitive' },
+        base_uom: { equals: data.base_uom.trim(), mode: 'insensitive' },
+        organizationId
+      }
     });
-    if (existing) return { success: false, error: `Item code '${data.item_code}' already exists` };
+    if (duplicate) {
+      return { success: false, error: `Item with name '${data.name}' and base UOM '${data.base_uom}' already exists.` };
+    }
+
+    // Auto-generate item_code if not specified
+    let itemCode = data.item_code;
+    if (!itemCode) {
+      const prefix = (data.item_type || 'OTHER').substring(0, 3).toUpperCase();
+      const count = await db.itemMaster.count({
+        where: {
+          item_code: { startsWith: `${prefix}-` },
+          organizationId
+        }
+      });
+      itemCode = `${prefix}-${(count + 1).toString().padStart(4, '0')}`;
+    }
+
+    const existingCode = await db.itemMaster.findFirst({
+      where: { item_code: itemCode, organizationId },
+    });
+    if (existingCode) return { success: false, error: `Item code '${itemCode}' already exists` };
+
+    // Maker-checker status: store_manager -> Draft, admin -> Active (default)
+    const status = session.role === 'admin' ? 'Active' : 'Draft';
+
     const row = await db.itemMaster.create({
-      data: { ...data, organizationId },
+      data: { ...data, item_code: itemCode, status, organizationId },
     });
+
     await db.system_audit_logs.create({
       data: {
         action: 'CREATE_ITEM', module: 'inventory',
-        details: `Created item: ${data.name} (${data.item_code})`,
+        details: `Created item: ${data.name} (${itemCode}) as status '${status}'`,
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
@@ -254,12 +288,52 @@ export async function createItem(input: unknown) {
 
 export async function updateItem(id: number, input: unknown) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(ITEM_CREATE_ROLES);
     const data = itemMasterSchema.partial().parse(input);
+
+    const currentItem = await db.itemMaster.findUnique({
+      where: { id, organizationId }
+    });
+    if (!currentItem) return { success: false, error: 'Item not found' };
+
+    let updateData: any = { ...data };
+
+    // Intercept price updates if user is store_manager
+    if (session.role === 'store_manager') {
+      const hasPriceChanges = 
+        (data.std_purchase_price !== undefined && data.std_purchase_price !== currentItem.std_purchase_price) ||
+        (data.selling_price !== undefined && data.selling_price !== currentItem.selling_price) ||
+        (data.mrp !== undefined && data.mrp !== currentItem.mrp);
+
+      if (hasPriceChanges) {
+        if (data.std_purchase_price !== undefined) {
+          updateData.pending_std_purchase_price = data.std_purchase_price;
+          delete updateData.std_purchase_price;
+        }
+        if (data.selling_price !== undefined) {
+          updateData.pending_selling_price = data.selling_price;
+          delete updateData.selling_price;
+        }
+        if (data.mrp !== undefined) {
+          updateData.pending_mrp = data.mrp;
+          delete updateData.mrp;
+        }
+
+        await db.system_audit_logs.create({
+          data: {
+            action: 'PROP_PRICE_CHANGE', module: 'inventory',
+            details: `Proposed price changes for item ID ${id}: std_purchase_price=${data.std_purchase_price}, selling_price=${data.selling_price}, mrp=${data.mrp}`,
+            organizationId, user_id: session.id, username: session.username, role: session.role,
+          },
+        });
+      }
+    }
+
     const row = await db.itemMaster.update({
       where: { id } as any,
-      data,
+      data: updateData,
     });
+
     await db.system_audit_logs.create({
       data: {
         action: 'UPDATE_ITEM', module: 'inventory',
@@ -276,15 +350,37 @@ export async function updateItem(id: number, input: unknown) {
 
 export async function approveItem(id: number) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(ITEM_APPROVE_ROLES);
+    const item = await db.itemMaster.findUnique({
+      where: { id, organizationId }
+    });
+    if (!item) return { success: false, error: 'Item not found' };
+
+    const updateData: any = { status: 'Active' };
+
+    // Apply pending price updates
+    if (item.pending_std_purchase_price !== null) {
+      updateData.std_purchase_price = item.pending_std_purchase_price;
+      updateData.pending_std_purchase_price = null;
+    }
+    if (item.pending_selling_price !== null) {
+      updateData.selling_price = item.pending_selling_price;
+      updateData.pending_selling_price = null;
+    }
+    if (item.pending_mrp !== null) {
+      updateData.mrp = item.pending_mrp;
+      updateData.pending_mrp = null;
+    }
+
     const row = await db.itemMaster.update({
       where: { id } as any,
-      data: { status: 'Active' },
+      data: updateData,
     });
+
     await db.system_audit_logs.create({
       data: {
         action: 'APPROVE_ITEM', module: 'inventory',
-        details: `Approved item ID: ${id}`,
+        details: `Approved item ID: ${id} and applied pending price updates.`,
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
@@ -297,7 +393,17 @@ export async function approveItem(id: number) {
 
 export async function discontinueItem(id: number, reason: string) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
+
+    // Discontinue stock check guard
+    const stocks = await db.storeStock.findMany({
+      where: { item_id: id, organizationId }
+    });
+    const totalQty = stocks.reduce((sum: number, s: any) => sum + s.quantity_on_hand, 0);
+    if (totalQty > 0) {
+      return { success: false, error: `Cannot discontinue: item has a total stock of ${totalQty} units on hand.` };
+    }
+
     const openIndents = await db.indentItem.count({
       where: {
         item_id: id,
@@ -305,6 +411,7 @@ export async function discontinueItem(id: number, reason: string) {
       },
     });
     if (openIndents > 0) return { success: false, error: 'Cannot discontinue: item has open indents' };
+
     const row = await db.itemMaster.update({
       where: { id } as any,
       data: { status: 'Discontinued' },
@@ -323,13 +430,14 @@ export async function discontinueItem(id: number, reason: string) {
   }
 }
 
+
 // ========================================
 // Bulk Import
 // ========================================
 
 export async function importItems(rows: Record<string, string>[], dryRun = true) {
   try {
-    const { db, organizationId, session } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const results: Array<{ row: number; status: 'ok' | 'error'; message?: string }> = [];
     const toCreate: any[] = [];
 
@@ -407,7 +515,7 @@ export async function importItems(rows: Record<string, string>[], dryRun = true)
 
 export async function upsertItemVendor(input: unknown) {
   try {
-    const { db, organizationId } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db, organizationId } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     const data = itemVendorSchema.parse(input);
     const row = await db.itemVendor.upsert({
       where: { item_id_vendor_id: { item_id: data.item_id, vendor_id: data.vendor_id } },
@@ -427,7 +535,7 @@ export async function upsertItemVendor(input: unknown) {
 
 export async function removeItemVendor(item_id: number, vendor_id: number) {
   try {
-    const { db } = await requireRoleAndTenant(INVENTORY_ADMIN_ROLES);
+    const { db } = await requireInventoryContext(INVENTORY_ADMIN_ROLES);
     await db.itemVendor.delete({
       where: { item_id_vendor_id: { item_id, vendor_id } },
     });

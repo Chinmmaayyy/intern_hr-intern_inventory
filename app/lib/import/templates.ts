@@ -142,6 +142,32 @@ const medicineMasterColumns: ImportColumn[] = [
     { name: 'is_active', required: false, type: 'boolean', description: 'Active status', example: 'true' },
 ];
 
+const itemMasterColumns: ImportColumn[] = [
+    { name: 'item_code', required: false, type: 'string', description: 'Item Code (leave blank to auto-generate)', example: 'CON-0001' },
+    { name: 'name', required: true, type: 'string', description: 'Item name', example: 'Syringe 5ml', maxLength: 200 },
+    { name: 'description', required: false, type: 'string', description: 'Detailed description', example: 'Disposable syringe 5ml' },
+    { name: 'category', required: true, type: 'string', description: 'Category name (must exist)', example: 'Consumables' },
+    { name: 'item_type', required: true, type: 'enum', description: 'Item Type', example: 'CONSUMABLE', values: ['CONSUMABLE','REAGENT','IMPLANT','LINEN','STATIONERY','MAINTENANCE','EQUIPMENT_SPARE','FOOD_DIETARY','OTHER'] },
+    { name: 'base_uom', required: true, type: 'string', description: 'Base Unit of Measure', example: 'EA' },
+    { name: 'purchase_uom', required: true, type: 'string', description: 'Purchase Unit of Measure', example: 'BOX' },
+    { name: 'uom_conversion', required: false, type: 'number', description: 'Conversion factor', example: '100' },
+    { name: 'hsn_sac_code', required: false, type: 'string', description: 'HSN/SAC code', example: '9018' },
+    { name: 'gst_rate', required: false, type: 'number', description: 'GST percentage', example: '12' },
+    { name: 'std_purchase_price', required: false, type: 'number', description: 'Standard Purchase Price (INR)', example: '2.50' },
+    { name: 'selling_price', required: false, type: 'number', description: 'Selling Price (INR)', example: '5.00' },
+    { name: 'mrp', required: false, type: 'number', description: 'Maximum Retail Price (INR)', example: '6.00' },
+    { name: 'is_batch_tracked', required: false, type: 'boolean', description: 'Batch tracked (true/false)', example: 'true' },
+    { name: 'is_expiry_tracked', required: false, type: 'boolean', description: 'Expiry tracked (true/false)', example: 'true' },
+    { name: 'is_patient_chargeable', required: false, type: 'boolean', description: 'Patient chargeable (true/false)', example: 'true' },
+    { name: 'is_returnable', required: false, type: 'boolean', description: 'Returnable (true/false)', example: 'true' },
+    { name: 'min_level', required: false, type: 'number', description: 'Minimum stock level', example: '100' },
+    { name: 'max_level', required: false, type: 'number', description: 'Maximum stock level', example: '1000' },
+    { name: 'reorder_point', required: false, type: 'number', description: 'Reorder point', example: '200' },
+    { name: 'lead_time_days', required: false, type: 'number', description: 'Lead time (days)', example: '7' },
+    { name: 'barcode', required: false, type: 'string', description: 'Barcode value', example: '123456789012' },
+    { name: 'is_active', required: false, type: 'boolean', description: 'Active status', example: 'true' },
+];
+
 const TEMPLATES: Record<ImportType, Omit<ImportTemplate, 'import_type'>> = {
     patients: {
         name: 'Patient Records',
@@ -197,6 +223,11 @@ const TEMPLATES: Record<ImportType, Omit<ImportTemplate, 'import_type'>> = {
         name: 'Medicine Master',
         description: 'Bulk import medicine catalog with MRP, purchase, and selling prices',
         columns: medicineMasterColumns,
+    },
+    item_master: {
+        name: 'Item Master',
+        description: 'Bulk import non-medicine items (consumables, reagents, assets) to Item Catalog',
+        columns: itemMasterColumns,
     },
 };
 

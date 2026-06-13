@@ -20,6 +20,8 @@ export default async function Home() {
     hr: "/hr/dashboard",
     ot_manager: "/ot/dashboard",
     er_staff: "/er/dashboard",
+    store_manager: "/inventory/dashboard",
+    procurement_officer: "/inventory/dashboard",
   };
 
   redirect(redirectMap[session.role] || '/login');

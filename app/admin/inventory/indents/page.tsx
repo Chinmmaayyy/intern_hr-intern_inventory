@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { listIndents, createIndent, getIndentById, issueIndentItems, approveIndent } from '@/app/actions/indent-actions';
+import { listIndents, createIndent, getIndentById, issueIndentItems, approveIndent, getFEFOSuggestion, receiveConfirmIndent, emergencyIssue } from '@/app/actions/indent-actions';
 import { listStores } from '@/app/actions/store-actions';
 import { listItems } from '@/app/actions/item-master-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
@@ -21,6 +21,8 @@ export default function IndentsListPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [issueQtyMap, setIssueQtyMap] = useState<Record<number, number>>({});
   const [issuingLineId, setIssuingLineId] = useState<number | null>(null);
+  const [fefoHints, setFefoHints] = useState<Record<number, string>>({});
+  const [receiving, setReceiving] = useState(false);
   const [approving, setApproving] = useState(false);
 
   const formatPriority = (priority?: string) => {
@@ -166,7 +168,23 @@ export default function IndentsListPage() {
       return;
     }
     setIssuingLineId(masterItemId);
-    const res = await issueIndentItems(selectedIndent.id, [{ item_id: masterItemId, quantity: qty }]);
+
+    // FEFO batch suggestion from issuing store
+    const fefoRes = await getFEFOSuggestion(selectedIndent.to_store_id, masterItemId, qty);
+    let issueLines: Array<{ item_id: number; batch_id?: number | null; quantity: number }> = [{ item_id: masterItemId, quantity: qty }];
+    if (fefoRes.success && fefoRes.data?.allocations?.length) {
+      issueLines = fefoRes.data.allocations.map(a => ({
+        item_id: masterItemId,
+        batch_id: a.batch_id,
+        quantity: a.qty,
+      }));
+      setFefoHints(prev => ({
+        ...prev,
+        [masterItemId]: fefoRes.data!.allocations.map(a => `${a.batch_no}${a.expiry_date ? ` (exp ${new Date(a.expiry_date).toLocaleDateString()})` : ''}: ${a.qty}`).join(', '),
+      }));
+    }
+
+    const res = await issueIndentItems(selectedIndent.id, issueLines);
     setIssuingLineId(null);
     if (res.success) {
       const detailRes = await getIndentById(selectedIndent.id);
@@ -181,6 +199,31 @@ export default function IndentsListPage() {
       loadData();
     } else {
       alert(res.error || 'Failed to issue item. Check supplying store stock.');
+    }
+  };
+
+  const handleReceiveConfirm = async () => {
+    if (!selectedIndent?.items?.length) return;
+    setReceiving(true);
+    const lines = selectedIndent.items
+      .filter((i: any) => (i.qty_issued || 0) > (i.qty_received || 0))
+      .map((i: any) => ({
+        item_id: i.item_id,
+        quantity: (i.qty_issued || 0) - (i.qty_received || 0),
+      }));
+    if (lines.length === 0) {
+      setReceiving(false);
+      alert('Nothing pending receipt.');
+      return;
+    }
+    const res = await receiveConfirmIndent(selectedIndent.id, lines);
+    setReceiving(false);
+    if (res.success) {
+      const detailRes = await getIndentById(selectedIndent.id);
+      if (detailRes.success) setSelectedIndent(detailRes.data);
+      loadData();
+    } else {
+      alert(res.error || 'Receipt confirmation failed.');
     }
   };
 
@@ -498,6 +541,18 @@ export default function IndentsListPage() {
               </div>
             </div>
 
+            {['In Transit', 'Partially Issued'].includes(selectedIndent.status) && (
+              <div className="mb-4 flex justify-end">
+                <button
+                  onClick={handleReceiveConfirm}
+                  disabled={receiving}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition disabled:opacity-50"
+                >
+                  {receiving ? 'Confirming...' : 'Confirm Receipt (Inter-branch)'}
+                </button>
+              </div>
+            )}
+
             {selectedIndent.status === 'Submitted' && (
               <div className="mb-4 flex justify-end">
                 <button
@@ -535,6 +590,9 @@ export default function IndentsListPage() {
                           <td className="py-3 px-3">
                             <div className="font-semibold text-gray-900">{item.item?.name}</div>
                             <div className="text-[10px] text-gray-500">{item.item?.item_code} | UOM: {item.item?.base_uom}</div>
+                            {fefoHints[item.item_id] && (
+                              <div className="text-[10px] text-indigo-600 mt-0.5">FEFO: {fefoHints[item.item_id]}</div>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right font-medium text-gray-900">{item.qty_requested}</td>
                           <td className="py-3 px-3 text-right text-gray-500">{item.qty_issued || 0}</td>

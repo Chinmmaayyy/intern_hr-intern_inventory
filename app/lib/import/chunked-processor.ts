@@ -79,6 +79,9 @@ async function insertRecord(
         case 'medicine_master':
             await insertMedicineMaster(data, db, organizationId);
             break;
+        case 'item_master':
+            await insertItemMaster(data, db, organizationId);
+            break;
         case 'appointments':
             await insertAppointment(data, db, organizationId);
             break;
@@ -380,6 +383,91 @@ async function insertAppointment(
             appointment_date: data.appointment_date ? new Date(String(data.appointment_date)) : new Date(),
             organizationId,
         },
+    });
+}
+
+async function insertItemMaster(
+    data: Record<string, unknown>,
+    db: TenantPrismaClient,
+    organizationId: string,
+): Promise<void> {
+    const name = String(data.name || '').trim();
+    if (!name) throw new Error('Item name is required');
+    const categoryName = String(data.category || '').trim();
+    if (!categoryName) throw new Error('Category is required');
+
+    // Find category
+    const category = await db.itemCategory.findFirst({
+        where: { name: { equals: categoryName, mode: 'insensitive' }, organizationId },
+        select: { id: true }
+    });
+    if (!category) throw new Error(`Category "${categoryName}" not found`);
+
+    const baseUom = String(data.base_uom || 'EA').trim();
+
+    // Duplicate check: name + base_uom
+    const duplicate = await db.itemMaster.findFirst({
+        where: {
+            name: { equals: name, mode: 'insensitive' },
+            base_uom: { equals: baseUom, mode: 'insensitive' },
+            organizationId
+        },
+        select: { id: true }
+    });
+    if (duplicate) throw new Error(`Item with name "${name}" and base UOM "${baseUom}" already exists`);
+
+    // Auto-generate or check item code
+    let itemCode = data.item_code ? String(data.item_code).trim() : null;
+    const itemType = String(data.item_type || 'CONSUMABLE').toUpperCase();
+
+    if (!itemCode) {
+        const prefix = itemType.substring(0, 3).toUpperCase();
+        const count = await db.itemMaster.count({
+            where: {
+                item_code: { startsWith: `${prefix}-` },
+                organizationId
+            }
+        });
+        itemCode = `${prefix}-${(count + 1).toString().padStart(4, '0')}`;
+    }
+
+    const existingCode = await db.itemMaster.findFirst({
+        where: { item_code: itemCode, organizationId },
+        select: { id: true }
+    });
+    if (existingCode) throw new Error(`Item code "${itemCode}" already exists`);
+
+    const stdPrice = Number(data.std_purchase_price) || 0;
+    const sellingPrice = Number(data.selling_price) || 0;
+    const mrp = Number(data.mrp) || 0;
+
+    await db.itemMaster.create({
+        data: {
+            item_code: itemCode,
+            name,
+            description: data.description ? String(data.description) : null,
+            category_id: category.id,
+            item_type: itemType,
+            base_uom: baseUom,
+            purchase_uom: String(data.purchase_uom || baseUom).trim(),
+            uom_conversion: Number(data.uom_conversion) || 1,
+            hsn_sac_code: data.hsn_sac_code ? String(data.hsn_sac_code) : null,
+            gst_rate: Number(data.gst_rate) || 0,
+            std_purchase_price: stdPrice,
+            selling_price: sellingPrice,
+            mrp: mrp,
+            is_batch_tracked: data.is_batch_tracked !== undefined ? Boolean(data.is_batch_tracked) : false,
+            is_expiry_tracked: data.is_expiry_tracked !== undefined ? Boolean(data.is_expiry_tracked) : false,
+            is_patient_chargeable: data.is_patient_chargeable !== undefined ? Boolean(data.is_patient_chargeable) : false,
+            is_returnable: data.is_returnable !== undefined ? Boolean(data.is_returnable) : true,
+            min_level: Number(data.min_level) || 0,
+            max_level: Number(data.max_level) || 0,
+            reorder_point: Number(data.reorder_point) || 0,
+            lead_time_days: Number(data.lead_time_days) || 0,
+            barcode: data.barcode ? String(data.barcode) : null,
+            status: 'Active',
+            organizationId,
+        }
     });
 }
 

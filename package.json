@@ -24,7 +24,8 @@
     "db:baseline": "node scripts/baseline-migrations.js",
     "db:status": "prisma migrate status",
     "db:backup": "mkdir -p backups && pg_dump \"$DIRECT_URL\" --format=custom --no-owner --no-acl --file \"backups/hospitalos-$(date +%Y%m%d-%H%M%S).dump\"",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "migrate:inventory": "npx tsx prisma/migrate-legacy-inventory.ts"
   },
   "prisma": {
     "seed": "npx ts-node --project prisma/tsconfig.seed.json prisma/seed.ts"
@@ -68,7 +69,7 @@
     "@types/node": "^20",
     "@types/nodemailer": "^7.0.11",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^19",
+    "@types/react": "19.2.17",
     "@types/react-dom": "^19",
     "@types/speakeasy": "^2.0.10",
     "cross-env": "^10.1.0",
