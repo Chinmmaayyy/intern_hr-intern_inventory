@@ -1,6 +1,6 @@
 
-const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcryptjs');
+import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -138,7 +138,12 @@ async function main() {
 
     for (const t of tests) {
         await prisma.lab_test_inventory.upsert({
-            where: { test_name: t.test_name },
+            where: {
+                test_name_organizationId: {
+                    test_name: t.test_name,
+                    organizationId: DEFAULT_ORG_ID
+                }
+            },
             update: { organizationId: DEFAULT_ORG_ID },
             create: { ...t, organizationId: DEFAULT_ORG_ID },
         });
@@ -178,7 +183,12 @@ async function main() {
 
     for (const m of medicines) {
         const med = await prisma.pharmacy_medicine_master.upsert({
-            where: { brand_name: m.brand_name },
+            where: {
+                brand_name_organizationId: {
+                    brand_name: m.brand_name,
+                    organizationId: DEFAULT_ORG_ID
+                }
+            },
             update: { organizationId: DEFAULT_ORG_ID },
             create: { ...m, organizationId: DEFAULT_ORG_ID },
         });
@@ -220,8 +230,8 @@ async function main() {
             const ward = await prisma.wards.create({ data: { ...w, organizationId: DEFAULT_ORG_ID } });
 
             const bedCount = w.ward_type === 'ICU' ? 6 :
-                             w.ward_type === 'Private' ? 8 :
-                             w.ward_type === 'Isolation' ? 4 : 10;
+                w.ward_type === 'Private' ? 8 :
+                    w.ward_type === 'Isolation' ? 4 : 10;
 
             const prefix = w.ward_name.split(' ')[0].toUpperCase().substring(0, 3);
 
@@ -286,28 +296,28 @@ async function main() {
     // 7. DEPARTMENTS
     // =============================================
     const departmentsData = [
-        { name: 'General Medicine',    slug: 'general-medicine',    base_consultation_fee: 500  },
-        { name: 'Cardiology',          slug: 'cardiology',          base_consultation_fee: 1000 },
-        { name: 'Orthopedics',         slug: 'orthopedics',         base_consultation_fee: 800  },
-        { name: 'Pediatrics',          slug: 'pediatrics',          base_consultation_fee: 600  },
-        { name: 'Neurology',           slug: 'neurology',           base_consultation_fee: 1000 },
-        { name: 'ENT',                 slug: 'ent',                 base_consultation_fee: 700  },
-        { name: 'Dermatology',         slug: 'dermatology',         base_consultation_fee: 700  },
-        { name: 'Pulmonology',         slug: 'pulmonology',         base_consultation_fee: 800  },
-        { name: 'OB/GYN',             slug: 'ob-gyn',              base_consultation_fee: 800  },
-        { name: 'Ophthalmology',       slug: 'ophthalmology',       base_consultation_fee: 700  },
-        { name: 'Urology',             slug: 'urology',             base_consultation_fee: 900  },
-        { name: 'Gastroenterology',    slug: 'gastroenterology',    base_consultation_fee: 900  },
-        { name: 'Oncology',            slug: 'oncology',            base_consultation_fee: 1500 },
-        { name: 'Radiology',           slug: 'radiology',           base_consultation_fee: 500  },
-        { name: 'Pathology',           slug: 'pathology',           base_consultation_fee: 400  },
-        { name: 'Anesthesiology',      slug: 'anesthesiology',      base_consultation_fee: 1000 },
-        { name: 'Emergency',           slug: 'emergency',           base_consultation_fee: 1500 },
-        { name: 'Dental',              slug: 'dental',              base_consultation_fee: 600  },
-        { name: 'Psychiatry',          slug: 'psychiatry',          base_consultation_fee: 1000 },
-        { name: 'Physiotherapy',       slug: 'physiotherapy',       base_consultation_fee: 500  },
-        { name: 'General Surgery',     slug: 'general-surgery',     base_consultation_fee: 1000 },
-        { name: 'Nephrology',          slug: 'nephrology',          base_consultation_fee: 1000 },
+        { name: 'General Medicine', slug: 'general-medicine', base_consultation_fee: 500 },
+        { name: 'Cardiology', slug: 'cardiology', base_consultation_fee: 1000 },
+        { name: 'Orthopedics', slug: 'orthopedics', base_consultation_fee: 800 },
+        { name: 'Pediatrics', slug: 'pediatrics', base_consultation_fee: 600 },
+        { name: 'Neurology', slug: 'neurology', base_consultation_fee: 1000 },
+        { name: 'ENT', slug: 'ent', base_consultation_fee: 700 },
+        { name: 'Dermatology', slug: 'dermatology', base_consultation_fee: 700 },
+        { name: 'Pulmonology', slug: 'pulmonology', base_consultation_fee: 800 },
+        { name: 'OB/GYN', slug: 'ob-gyn', base_consultation_fee: 800 },
+        { name: 'Ophthalmology', slug: 'ophthalmology', base_consultation_fee: 700 },
+        { name: 'Urology', slug: 'urology', base_consultation_fee: 900 },
+        { name: 'Gastroenterology', slug: 'gastroenterology', base_consultation_fee: 900 },
+        { name: 'Oncology', slug: 'oncology', base_consultation_fee: 1500 },
+        { name: 'Radiology', slug: 'radiology', base_consultation_fee: 500 },
+        { name: 'Pathology', slug: 'pathology', base_consultation_fee: 400 },
+        { name: 'Anesthesiology', slug: 'anesthesiology', base_consultation_fee: 1000 },
+        { name: 'Emergency', slug: 'emergency', base_consultation_fee: 1500 },
+        { name: 'Dental', slug: 'dental', base_consultation_fee: 600 },
+        { name: 'Psychiatry', slug: 'psychiatry', base_consultation_fee: 1000 },
+        { name: 'Physiotherapy', slug: 'physiotherapy', base_consultation_fee: 500 },
+        { name: 'General Surgery', slug: 'general-surgery', base_consultation_fee: 1000 },
+        { name: 'Nephrology', slug: 'nephrology', base_consultation_fee: 1000 },
     ];
 
     for (const dept of departmentsData) {
@@ -434,13 +444,13 @@ async function main() {
     // Link head doctors to their departments
     const headDoctorLinks: { slug: string; username: string }[] = [
         { slug: 'general-medicine', username: 'doc1' },
-        { slug: 'cardiology',       username: 'doc2' },
-        { slug: 'orthopedics',      username: 'doc3' },
-        { slug: 'pediatrics',       username: 'doc4' },
-        { slug: 'neurology',        username: 'doc5' },
-        { slug: 'ent',              username: 'doc6' },
-        { slug: 'dermatology',      username: 'doc7' },
-        { slug: 'pulmonology',      username: 'doc8' },
+        { slug: 'cardiology', username: 'doc2' },
+        { slug: 'orthopedics', username: 'doc3' },
+        { slug: 'pediatrics', username: 'doc4' },
+        { slug: 'neurology', username: 'doc5' },
+        { slug: 'ent', username: 'doc6' },
+        { slug: 'dermatology', username: 'doc7' },
+        { slug: 'pulmonology', username: 'doc8' },
     ];
 
     for (const link of headDoctorLinks) {
@@ -496,4 +506,4 @@ main()
         await prisma.$disconnect();
     });
 
-export {};
+export { };

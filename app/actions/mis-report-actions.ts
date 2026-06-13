@@ -2,9 +2,32 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use server';
 
+/**
+ * app/actions/mis-report-actions.ts
+ * ----------------------------------
+ * All MIS-module Server Actions live here.
+ *
+ * ## RBAC contract (per directive)
+ *   - `generateReport` NEVER throws an unhandled error for access denial.
+ *     On `MISAccessDeniedError` it returns a safe object so the calling
+ *     Server Component can pass it to `UniversalReportShell` which then
+ *     renders the polite <AccessDeniedState> UI.
+ *   - `exportReportToExcel` is called from a Client Component button; on
+ *     access denial it throws a user-friendly string so ExportExcelButton
+ *     can display its `error` state.
+ *   - `listCatalogue` already filtered by `requiredPermission`; RBAC is now
+ *     enforced end-to-end because `runReport` calls `assertReportAccess`.
+ *
+ * ## Session note
+ *   `getSession()` is a mock that reads the first User from the DB and derives
+ *   MIS permissions from `User.role` via `getMISPermissions()`. Once a real
+ *   auth provider (NextAuth, JWT, etc.) is wired, replace `getSession` only —
+ *   no other function in this file needs to change.
+ */
+
 import { prisma } from '@/backend/db';
 import { runReport, REGISTRY } from '@/lib/mis/runner';
-import { 
+import {
   dailyRevenueReport,
   billingDetailReport,
   billingItemDetailReport,
@@ -40,24 +63,44 @@ import {
   revenueWardWiseReport
 } from '@/lib/mis/registry/revenue';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
-import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
+import { GenerateReportResponse, JobStatusResponse, ExportExcelResponse } from '@/lib/mis/action-types';
+import { getMISPermissions, MISAccessDeniedError } from '@/lib/mis/rbac';
+import type { ColumnSpec } from '@/lib/mis/types';
 
+// ─── Session ──────────────────────────────────────────────────────────────────
+
+/**
+ * Mock session resolver.
+ *
+ * Reads the first User from the DB and derives MIS permissions from their
+ * `User.role` string via `getMISPermissions()`.
+ *
+ * IMPORTANT: Replace this function's body with a real auth lookup (NextAuth
+ * `getServerSession`, JWT decode, etc.) before production. The public API of
+ * `getSession()` must remain unchanged — callers only use `orgId`, `userId`,
+ * and `permissions`.
+ */
 async function getSession() {
   const user = await prisma.user.findFirst({
-    select: { id: true, organizationId: true }
+    select: { id: true, organizationId: true, role: true },
   });
-  if (!user) throw new Error("No users found in database for mock session");
+  if (!user) throw new Error('No users found in database for mock session');
+
   return {
-    orgId: user.organizationId,
-    userId: user.id,
-    permissions: ['mis_reports.billing.view', 'mis_reports.revenue.view'],
+    orgId:       user.organizationId,
+    userId:      user.id,
+    // `user.role` is the raw String from the DB (e.g. "admin", "doctor").
+    // getMISPermissions() maps it to the correct MIS permission set, falling
+    // back to `viewer` defaults for any unknown role string.
+    permissions: getMISPermissions(user.role),
   };
 }
 
+// ─── Catalogue ────────────────────────────────────────────────────────────────
+
 export async function listCatalogue() {
   const session = await getSession();
-  
-  // Hardcoded for now, you would iterate over REGISTRY
+
   const allReports = [
     dailyRevenueReport,
     billingDetailReport,
@@ -89,17 +132,17 @@ export async function listCatalogue() {
     revenuePayerNameWiseReport,
     revenueServiceTypeWiseReport,
     revenueBillingCategoryWiseReport,
-    revenueWardWiseReport
+    revenueWardWiseReport,
   ];
-  
-  const accessibleReports = allReports.filter(r => 
+
+  // Only surface reports the session's role can actually run.
+  const accessibleReports = allReports.filter((r) =>
     session.permissions.includes(r.requiredPermission)
   );
 
   const grouped = accessibleReports.reduce((acc, report) => {
     if (!acc[report.category]) acc[report.category] = [];
-    
-    // We omit queryFn and other server secrets when sending to client
+    // Strip server-only fields before sending to the client.
     const { queryFn, drillDownTo, chartSpec, ...clientDef } = report;
     acc[report.category].push(clientDef);
     return acc;
@@ -108,12 +151,30 @@ export async function listCatalogue() {
   return grouped;
 }
 
+// ─── Generate Report ──────────────────────────────────────────────────────────
+
+/**
+ * Runs a report and returns a `GenerateReportResponse`.
+ *
+ * ## Access Denied — safe return instead of throw
+ * Per directive: this action MUST NOT throw an unhandled error on access
+ * denial. Doing so would cause Next.js to crash to the error boundary from the
+ * Server Component page. Instead, on `MISAccessDeniedError` we return:
+ *
+ *   { async: false, error: 'UNAUTHORIZED' }
+ *
+ * `UniversalReportShell` checks for `payload.error === 'UNAUTHORIZED'` and
+ * renders the polite <AccessDeniedState> UI.
+ *
+ * All other unexpected errors are still re-thrown so the error boundary
+ * (or a wrapping try/catch in page.tsx) can handle them.
+ */
 export async function generateReport(
-  reportId: string, 
+  reportId: string,
   filters: unknown
 ): Promise<GenerateReportResponse> {
   const session = await getSession();
-  
+
   try {
     const result = await runReport(
       reportId,
@@ -124,13 +185,23 @@ export async function generateReport(
     );
     return result;
   } catch (error: any) {
-    throw new Error(error.message || 'Failed to generate report');
+    // ── Safe path: access denial → return, not throw ──────────────────────
+    if (error?.code === 'MIS_ACCESS_DENIED') {
+      return {
+        async: false,
+        error: 'UNAUTHORIZED',
+      };
+    }
+    // ── All other errors: re-throw for Next.js error boundary ─────────────
+    throw new Error(error.message ?? 'Failed to generate report');
   }
 }
 
+// ─── Job Status ───────────────────────────────────────────────────────────────
+
 export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   const session = await getSession();
-  
+
   const job = await prisma.reportJob.findUnique({
     where: { id: jobId },
   });
@@ -140,88 +211,135 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   }
 
   return {
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+    id:          job.id,
+    status:      job.status,
+    progress:    job.progress,
+    file_key:    job.file_key,
+    error:       job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   };
 }
 
 export async function listJobs(): Promise<JobStatusResponse[]> {
   const session = await getSession();
-  
+
   const jobs = await prisma.reportJob.findMany({
-    where: { organizationId: session.orgId },
+    where:   { organizationId: session.orgId },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take:    20,
   });
 
-  return jobs.map(job => ({
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+  return jobs.map((job) => ({
+    id:          job.id,
+    status:      job.status,
+    progress:    job.progress,
+    file_key:    job.file_key,
+    error:       job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   }));
 }
 
-// ─── Excel Export ─────────────────────────────────────────────────────────────
-
-export interface ExportExcelResponse {
-  /** Base64-encoded .xlsx file contents */
-  base64: string;
-  /** Suggested filename for the download */
-  filename: string;
-}
-
+/**
+ * Runs a report and returns the result as a Base64-encoded Excel file
+ * (sync path) or queues a background job (async path) for the
+ * ExportExcelButton to poll via getJobStatus().
+ *
+ * ## Return shape
+ * Sync  → { async: false, base64: string, filename: string }
+ * Async → { async: true,  jobId: string }
+ *
+ * ## Access Denial
+ * Called from a Client Component button — ExportExcelButton already handles
+ * thrown errors by transitioning to its `error` state and showing the message.
+ * So we throw a user-friendly string here (safe for that context).
+ */
 export async function exportReportToExcel(
   reportId: string,
   filters: unknown
 ): Promise<ExportExcelResponse> {
   const session = await getSession();
 
-  // 1. Look up column definitions from the registry
+  // 1. Look up column definitions from the registry.
   const reportDef = REGISTRY[reportId];
   if (!reportDef) {
-    throw new Error(`Report ${reportId} not found in registry`);
+    throw new Error(`Report "${reportId}" not found in registry.`);
   }
 
-  // 2. Run the report (reuses the same runner as generateReport)
-  const result = await runReport(
-    reportId,
-    filters,
-    session.orgId,
-    session.userId,
-    session.permissions
-  );
-
-  // 3. Async exports are not supported yet
-  if (result.async) {
-    throw new Error(
-      'This report is too large for instant export. Async Excel exports will be supported soon.'
+  // 2. Run the report — assertReportAccess fires inside runReport.
+  let result: GenerateReportResponse;
+  try {
+    result = await runReport(
+      reportId,
+      filters,
+      session.orgId,
+      session.userId,
+      session.permissions
     );
+  } catch (error: any) {
+    if (error?.code === 'MIS_ACCESS_DENIED') {
+      // Throw a user-readable message — ExportExcelButton shows it in-line.
+      throw new Error(
+        'You do not have permission to export this report. Contact your administrator.'
+      );
+    }
+    throw new Error(error.message ?? 'Failed to export report.');
   }
 
-  // 4. Generate the Excel buffer
+  // 3. Large report — queue a background Excel job and return jobId.
+  //    ExportExcelButton enters its 'polling' state and calls getJobStatus()
+  //    every 2 s until job.status === 'Completed'.
+  if (result.async) {
+    // Prisma field names are exact — verified against schema.prisma in Phase 1.
+    const job = await prisma.reportJob.create({
+      data: {
+        report_id:      reportId,
+        filters_json:   (filters ?? {}) as any,
+        requested_by:   session.userId,
+        organizationId: session.orgId,
+        format:         'Excel',
+        status:         'Queued',
+      },
+    });
+    return { async: true, jobId: job.id };
+  }
+
+  // 4. Generate the Excel buffer.
   const buffer = await generateExcelBuffer(
     reportDef.columns,
-    result.rows ?? [],
+    result.rows   ?? [],
     result.totals ?? {}
   );
 
-  // 5. Build a safe filename: "Daily_Revenue_by_Doctor_Department_2026-06-12.xlsx"
+  // 5. Build a safe, date-stamped filename.
   const dateSuffix = new Date().toISOString().split('T')[0];
-  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
-  const filename = `${safeName}_${dateSuffix}.xlsx`;
+  const safeName   = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
 
-  // 6. Return Base64 — safe for Server Action serialization
+  // 6. Return Base64 — safe for Server Action serialisation.
   return {
-    base64: buffer.toString('base64'),
-    filename,
+    async:    false,
+    base64:   buffer.toString('base64'),
+    filename: `${safeName}_${dateSuffix}.xlsx`,
   };
+}
+
+// ─── Report Columns (for Drill-Down) ─────────────────────────────────────────
+
+/**
+ * Returns only the safe, serialisable column spec and display name for a
+ * given report. Used by `UniversalReportShell` to render the `DrillDownPanel`
+ * without requiring a second full `generateReport` just for schema discovery.
+ *
+ * Does NOT enforce RBAC — column metadata is not sensitive. The actual data
+ * fetch (via `generateReport`) enforces access.
+ */
+export async function getReportColumns(
+  reportId: string
+): Promise<{ columns: ColumnSpec[]; name: string }> {
+  const reportDef = REGISTRY[reportId];
+  if (!reportDef) {
+    throw new Error(`Report "${reportId}" not found in registry.`);
+  }
+  return { columns: reportDef.columns, name: reportDef.name };
 }

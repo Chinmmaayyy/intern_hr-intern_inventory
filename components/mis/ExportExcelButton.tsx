@@ -24,19 +24,28 @@
  * This is synchronous, zero-dependency, and supported in every modern browser.
  * The alternative (`fetch('data:…')`) is slower and may be blocked by CSP.
  *
- * ## State Machine
- *   idle → loading → success → idle  (auto-reset after 2.5 s)
- *              ↓
- *           error  → idle  (auto-reset after 4 s)
+ * ## State Machine (Phase 4 expanded)
+ *
+ *   idle → loading ──→ success → idle  (auto-reset after 2.5 s)
+ *               │
+ *               └──→ polling ──→ success → idle  (auto-reset after 2.5 s)
+ *                         │
+ *                         └──→ error → idle  (auto-reset after 4 s)
+ *               │
+ *               └──→ error   → idle  (auto-reset after 4 s)
+ *
+ * The `polling` state is entered when exportReportToExcel() returns
+ * { async: true, jobId }. The button calls getJobStatus(jobId) every 2 s
+ * until status === 'Completed', then opens file_key in a new tab.
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { exportReportToExcel } from '@/app/actions/mis-report-actions';
+import { exportReportToExcel, getJobStatus } from '@/app/actions/mis-report-actions';
 import { Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ExportState = 'idle' | 'loading' | 'success' | 'error';
+type ExportState = 'idle' | 'loading' | 'polling' | 'success' | 'error';
 
 export interface ExportExcelButtonProps {
     /** Must match a key in the MIS report REGISTRY (e.g. 'billing-revenue-daily'). */
@@ -107,6 +116,18 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
 const XLSX_MIME =
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+/**
+ * Polling interval in milliseconds for async export jobs.
+ * 2000 ms balances responsiveness against unnecessary server-action traffic.
+ */
+const POLL_INTERVAL_MS = 2000;
+
+/**
+ * Maximum number of poll attempts before giving up.
+ * 60 attempts × 2 s = 2 minutes maximum wait before surfacing an error.
+ */
+const POLL_MAX_ATTEMPTS = 60;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ExportExcelButton({
@@ -119,6 +140,8 @@ export function ExportExcelButton({
 
     // Ref to track auto-reset timers so we can clear them on unmount
     const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Ref to allow cancellation of the polling loop on unmount
+    const pollAbortRef  = useRef<boolean>(false);
 
     const scheduleReset = useCallback((delay: number) => {
         if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
@@ -128,8 +151,68 @@ export function ExportExcelButton({
         }, delay);
     }, []);
 
+    /**
+     * Polls getJobStatus(jobId) every POLL_INTERVAL_MS until the job reaches
+     * a terminal state ('Completed' or 'Failed'), then either opens the
+     * file_key URL in a new tab (success) or surfaces an error.
+     *
+     * Uses `pollAbortRef` to cleanly stop if the component unmounts mid-poll.
+     */
+    const pollForDownload = useCallback(async (jobId: string) => {
+        pollAbortRef.current = false;
+        let attempts = 0;
+
+        const tick = (): Promise<void> =>
+            new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+        while (attempts < POLL_MAX_ATTEMPTS && !pollAbortRef.current) {
+            await tick();
+            attempts++;
+
+            let job;
+            try {
+                job = await getJobStatus(jobId);
+            } catch {
+                // Network / server error — keep polling rather than giving up
+                // immediately; transient blips are common during large jobs.
+                continue;
+            }
+
+            if (job.status === 'Completed') {
+                if (job.file_key) {
+                    // Open the download URL in a new tab. Q2 (plan) noted this
+                    // as option (a) — direct file_key URL. Replace with a
+                    // pre-signed URL route when the S3 integration is finalised.
+                    window.open(job.file_key, '_blank', 'noopener,noreferrer');
+                }
+                setState('success');
+                scheduleReset(2500);
+                return;
+            }
+
+            if (job.status === 'Failed') {
+                setState('error');
+                setErrorMsg(job.error ?? 'Export job failed. Please try again.');
+                scheduleReset(4000);
+                return;
+            }
+
+            // Any other status ('Queued', 'Processing', 'Running') → keep polling
+        }
+
+        // Timeout guard — POLL_MAX_ATTEMPTS exhausted without a terminal status
+        if (!pollAbortRef.current) {
+            setState('error');
+            setErrorMsg(
+                'Export is taking longer than expected. Check the Jobs panel for status.'
+            );
+            scheduleReset(4000);
+        }
+    }, [scheduleReset]);
+
     const handleExport = useCallback(async () => {
-        if (state === 'loading') return;
+        // Guard against double-click during any active state
+        if (state === 'loading' || state === 'polling') return;
 
         setState('loading');
         setErrorMsg(null);
@@ -137,52 +220,61 @@ export function ExportExcelButton({
         try {
             // ── 1. Smartly extract dates (handling UI keys vs Backend keys) ──
             const start = (filters as any)?.date_start || (filters as any)?.startDate;
-            const end = (filters as any)?.date_end || (filters as any)?.endDate;
+            const end   = (filters as any)?.date_end   || (filters as any)?.endDate;
 
             // ── 2. The Safety Net: Prevent backend crashes ──
             if (!start || !end) {
                 setState('error');
-                setErrorMsg("Please select a date range in the filter bar before exporting.");
+                setErrorMsg('Please select a date range in the filter bar before exporting.');
                 scheduleReset(4000);
                 return;
             }
 
-            // ── 3. Assemble the exact payload Shlok's backend demands ──
+            // ── 3. Assemble the exact payload the backend demands ──
             const backendPayload = {
                 ...(typeof filters === 'object' ? filters : {}),
                 date_start: start,
-                date_end: end,
+                date_end:   end,
             };
 
-            // ── 4. Call the Server Action with the safe payload ──
-            const { base64, filename } = await exportReportToExcel(reportId, backendPayload);
+            // ── 4. Call the Server Action ──
+            const response = await exportReportToExcel(reportId, backendPayload);
 
-            // ── 5. Decode and Trigger Download ──
-            const blob = base64ToBlob(base64, XLSX_MIME);
-            triggerBlobDownload(blob, filename);
+            // ── 5a. Async path — large report queued as a background job ──
+            if (response.async) {
+                setState('polling');
+                await pollForDownload(response.jobId);
+                return;
+            }
 
+            // ── 5b. Sync path — decode Base64 and trigger immediate download ──
+            const blob = base64ToBlob(response.base64, XLSX_MIME);
+            triggerBlobDownload(blob, response.filename);
             setState('success');
             scheduleReset(2500);
+
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
             setState('error');
             setErrorMsg(message);
             scheduleReset(4000);
         }
-    }, [state, reportId, filters, scheduleReset]);
+    }, [state, reportId, filters, scheduleReset, pollForDownload]);
 
     // ── Derived button appearance based on state ─────────────────────────────
 
-    const isLoading = state === 'loading';
-    const isSuccess = state === 'success';
-    const isError = state === 'error';
+    const isLoading  = state === 'loading' || state === 'polling';
+    const isSuccess  = state === 'success';
+    const isError    = state === 'error';
+    const isPolling  = state === 'polling';
 
-    const buttonLabel = {
-        idle: 'Export to Excel',
+    const buttonLabel: Record<ExportState, string> = {
+        idle:    'Export to Excel',
         loading: 'Generating…',
+        polling: 'Processing…',
         success: 'Downloaded!',
-        error: 'Export Failed',
-    }[state];
+        error:   'Export Failed',
+    };
 
     const buttonBase = `
         inline-flex items-center gap-2 px-3.5 py-2
@@ -193,7 +285,7 @@ export function ExportExcelButton({
         select-none whitespace-nowrap
     `;
 
-    const buttonVariant = {
+    const buttonVariant: Record<ExportState, string> = {
         idle: `
             bg-emerald-50 text-emerald-700 border-emerald-200
             hover:bg-emerald-100 hover:border-emerald-300
@@ -202,6 +294,10 @@ export function ExportExcelButton({
         `,
         loading: `
             bg-emerald-50 text-emerald-600 border-emerald-200
+            cursor-wait
+        `,
+        polling: `
+            bg-amber-50 text-amber-700 border-amber-200
             cursor-wait
         `,
         success: `
@@ -213,14 +309,15 @@ export function ExportExcelButton({
             hover:bg-rose-100
             focus-visible:ring-rose-400
         `,
-    }[state];
+    };
 
-    const Icon = {
-        idle: <Download className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />,
-        loading: <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />,
-        success: <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />,
-        error: <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />,
-    }[state];
+    const Icon: Record<ExportState, React.ReactElement> = {
+        idle:    <Download  className="h-3.5 w-3.5 shrink-0"            aria-hidden="true" />,
+        loading: <Loader2   className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />,
+        polling: <Loader2   className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />,
+        success: <CheckCircle2 className="h-3.5 w-3.5 shrink-0"         aria-hidden="true" />,
+        error:   <AlertCircle  className="h-3.5 w-3.5 shrink-0"         aria-hidden="true" />,
+    };
 
     return (
         <div className={`inline-flex flex-col items-end gap-1 ${className}`}>
@@ -228,13 +325,19 @@ export function ExportExcelButton({
                 type="button"
                 onClick={handleExport}
                 disabled={isLoading}
-                aria-label={isLoading ? 'Generating Excel report, please wait…' : 'Export this report as an Excel file'}
+                aria-label={
+                    isPolling
+                        ? 'Processing large report in the background, please wait…'
+                        : isLoading
+                        ? 'Generating Excel report, please wait…'
+                        : 'Export this report as an Excel file'
+                }
                 aria-live="polite"
                 aria-busy={isLoading}
-                className={`${buttonBase} ${buttonVariant}`}
+                className={`${buttonBase} ${buttonVariant[state]}`}
             >
-                {Icon}
-                <span>{buttonLabel}</span>
+                {Icon[state]}
+                <span>{buttonLabel[state]}</span>
             </button>
 
             {/* Inline error message — only shown when state === 'error' */}
@@ -244,6 +347,13 @@ export function ExportExcelButton({
                     className="text-[10px] font-semibold text-rose-600 max-w-[220px] text-right leading-tight"
                 >
                     {errorMsg}
+                </p>
+            )}
+
+            {/* Polling status hint */}
+            {isPolling && (
+                <p className="text-[10px] font-semibold text-amber-600 max-w-[220px] text-right leading-tight">
+                    Large report — processing in background…
                 </p>
             )}
         </div>

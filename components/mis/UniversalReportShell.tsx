@@ -29,16 +29,24 @@
  *   - ExportExcelButton re-maps URL param keys (startDate/endDate) to the Zod
  *     filter keys (date_start/date_end) before passing to the Server Action.
  *
- * ## Async / Empty states
- *   - payload.async === true  → renders <AsyncQueuedBanner>
- *   - rows.length === 0       → renders <EmptyState>
+ * ## Async / Empty / RBAC states
+ *   - payload.error === 'UNAUTHORIZED' → renders <AccessDeniedState>
+ *   - payload.async === true           → renders <AsyncQueuedBanner>
+ *   - rows.length === 0               → renders <EmptyState>
+ *
+ * ## Drill-Down (Phase 3)
+ *   - When drillDownTo + drillDownKey props are set, each <tr> becomes
+ *     clickable. Clicking a row fires handleDrillDown() which calls
+ *     generateReport() and getReportColumns() in parallel, then renders
+ *     <DrillDownPanel> below the main table card.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { ExportExcelButton } from '@/components/mis/ExportExcelButton';
-import { BarChart3, Inbox, Clock4 } from 'lucide-react';
+import { BarChart3, ChevronDown, Inbox, Clock4, Loader2, ShieldOff, X } from 'lucide-react';
+import { generateReport, getReportColumns } from '@/app/actions/mis-report-actions';
 
 // `import type` is critical here: ColumnSpec lives in a file that also imports
 // `z` from zod. Using `import type` guarantees zero runtime Zod bundling.
@@ -52,6 +60,12 @@ export interface UniversalPayload {
     jobId?:  string;
     rows?:   Record<string, unknown>[];
     totals?: Record<string, number>;
+    /**
+     * Set to 'UNAUTHORIZED' by generateReport() when the user's role does not
+     * grant the requiredPermission for this report. The shell renders
+     * <AccessDeniedState> instead of crashing or showing empty data.
+     */
+    error?:  string;
 }
 
 export interface UniversalReportShellProps {
@@ -63,6 +77,18 @@ export interface UniversalReportShellProps {
     columns:    ColumnSpec[];
     /** Response from generateReport() — rows, totals, and async state. */
     payload:    UniversalPayload;
+    /**
+     * Registry ID of the detail/child report to open on row click.
+     * If omitted, rows are not clickable and no drill-down is rendered.
+     * Source: ReportDefinition.drillDownTo from the registry.
+     */
+    drillDownTo?:  string;
+    /**
+     * Which field in the clicked summary row to use as the filter value
+     * when calling generateReport(drillDownTo, { date_start, date_end, … }).
+     * Source: ReportDefinition.drillDownKey from the registry.
+     */
+    drillDownKey?: string;
 }
 
 // ─── Cell formatters ──────────────────────────────────────────────────────────
@@ -152,12 +178,22 @@ export function UniversalReportShell({
     reportName,
     columns,
     payload,
+    drillDownTo,
+    drillDownKey,
 }: UniversalReportShellProps) {
     const searchParams = useSearchParams();
 
     // Read URL params — written by MISFilterEngine via router.push()
     const startDate = searchParams.get('startDate') ?? '';
     const endDate   = searchParams.get('endDate')   ?? '';
+
+    // ── 0. Access Denied state ───────────────────────────────────────────────
+    // generateReport() returns { error: 'UNAUTHORIZED' } instead of throwing
+    // so Next.js never reaches its error boundary. We catch it here and show
+    // a polite, informative UI rather than a blank page or a crash.
+    if (payload.error === 'UNAUTHORIZED') {
+        return <AccessDeniedState />;
+    }
 
     // ── 1. Async/queued state ────────────────────────────────────────────────
     if (payload.async) {
@@ -209,6 +245,140 @@ export function UniversalReportShell({
     }
 
     return (
+        <DrillDownWrapper
+            reportId={reportId}
+            reportName={reportName}
+            columns={columns}
+            rows={rows}
+            totals={totals}
+            showTotalsRow={showTotalsRow}
+            leadingNonTotalCount={leadingNonTotalCount}
+            exportFilters={exportFilters}
+            drillDownTo={drillDownTo}
+            drillDownKey={drillDownKey}
+        />
+    );
+}
+
+// ─── DrillDownWrapper ─────────────────────────────────────────────────────────
+//
+// Extracted into its own component so hooks (useState, useCallback) are only
+// instantiated when there IS data to display — hooks cannot be called
+// conditionally before the early-return guards above. This pattern avoids
+// the React "hooks before return" rule violation that would occur if we put
+// useState inside the main component body above the `if (rows.length === 0)`
+// guard.
+
+interface DrillDownWrapperProps {
+    reportId:             string;
+    reportName:           string;
+    columns:              ColumnSpec[];
+    rows:                 Record<string, unknown>[];
+    totals:               Record<string, number>;
+    showTotalsRow:        boolean;
+    leadingNonTotalCount: number;
+    exportFilters:        { date_start?: string; date_end?: string };
+    drillDownTo?:         string;
+    drillDownKey?:        string;
+}
+
+function DrillDownWrapper({
+    reportId,
+    reportName,
+    columns,
+    rows,
+    totals,
+    showTotalsRow,
+    leadingNonTotalCount,
+    exportFilters,
+    drillDownTo,
+    drillDownKey,
+}: DrillDownWrapperProps) {
+    // ── Drill-Down state ─────────────────────────────────────────────────────
+    const [drillRow,     setDrillRow]     = useState<Record<string, unknown> | null>(null);
+    const [drillPayload, setDrillPayload] = useState<UniversalPayload | null>(null);
+    const [drillColumns, setDrillColumns] = useState<ColumnSpec[]>([]);
+    const [drillName,    setDrillName]    = useState('');
+    const [drillLoading, setDrillLoading] = useState(false);
+    const [drillError,   setDrillError]   = useState<string | null>(null);
+
+    /**
+     * Called when the user clicks a summary row while drillDownTo is set.
+     *
+     * Fires getReportColumns() and generateReport() in parallel so the
+     * DrillDownPanel has both column schema AND data by the time it renders.
+     * The drillDownKey's value from the clicked row is forwarded as both
+     * date_start and date_end so the detail report is filtered to that day.
+     */
+    const handleDrillDown = useCallback(async (row: Record<string, unknown>) => {
+        if (!drillDownTo || !drillDownKey) return;
+
+        setDrillRow(row);
+        setDrillLoading(true);
+        setDrillError(null);
+        setDrillPayload(null);
+
+        // ── Robust date extraction ───────────────────────────────────────────
+        //
+        // Why NOT `instanceof Date`:
+        //   row values arrive from a Server Action via JSON serialisation.
+        //   Date objects do not survive JSON — they become ISO datetime strings
+        //   like "2026-06-12T00:00:00.000Z". instanceof Date is always false.
+        //
+        // Why NOT String(rawVal) directly:
+        //   That sends "2026-06-12T00:00:00.000Z" as date_start and date_end.
+        //   The query does `new Date(date_start)` and `new Date(date_end)` and
+        //   gets the same UTC instant → zero-second window → 0 rows.
+        //
+        // Solution: always extract the YYYY-MM-DD portion, then:
+        //   date_start = "YYYY-MM-DDT00:00:00.000Z" (start of UTC day)
+        //   date_end   = "YYYY-MM-DDT23:59:59.999Z" (end   of UTC day)
+        // This ensures new Date(date_end) covers the full IST calendar day.
+
+        const rawVal = row[drillDownKey];
+        const rawStr = rawVal instanceof Date
+            ? rawVal.toISOString()          // should not happen, but safe fallback
+            : String(rawVal ?? '');
+
+        // Match YYYY-MM-DD at the start of any string (covers both
+        // "2026-06-12" and "2026-06-12T00:00:00.000Z")
+        const isoDateMatch = rawStr.match(/^(\d{4}-\d{2}-\d{2})/);
+        const datePart = isoDateMatch ? isoDateMatch[1] : rawStr;
+
+        const drillStart = `${datePart}T00:00:00.000Z`;
+        const drillEnd   = `${datePart}T23:59:59.999Z`;
+
+        try {
+            const [metaResult, reportResult] = await Promise.all([
+                getReportColumns(drillDownTo),
+                generateReport(drillDownTo, {
+                    // Spread parent context first (branch_id, department_id, etc.)
+                    // so the drill-down date keys always win, even when exportFilters
+                    // carries undefined values from an unset URL date param.
+                    ...exportFilters,
+                    date_start: drillStart,
+                    date_end:   drillEnd,
+                }),
+            ]);
+
+            setDrillColumns(metaResult.columns);
+            setDrillName(metaResult.name);
+            setDrillPayload(reportResult as UniversalPayload);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Failed to load detail data.';
+            setDrillError(msg);
+        } finally {
+            setDrillLoading(false);
+        }
+    }, [drillDownTo, drillDownKey, exportFilters]);
+
+    const handleDrillClose = useCallback(() => {
+        setDrillRow(null);
+        setDrillPayload(null);
+        setDrillError(null);
+    }, []);
+
+    return (
         <div className="space-y-5">
 
             {/* ── Filter Engine (date-only; doctor select suppressed) ────────── */}
@@ -224,6 +394,13 @@ export function UniversalReportShell({
                         <span className="text-sm font-bold text-stone-900 truncate">
                             {reportName}
                         </span>
+                        {/* Drill-down hint badge */}
+                        {drillDownTo && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                <ChevronDown className="h-2.5 w-2.5" aria-hidden="true" />
+                                Expandable
+                            </span>
+                        )}
                     </div>
 
                     {/* Right controls: row count pill + export button */}
@@ -265,20 +442,31 @@ export function UniversalReportShell({
                         {/* ── tbody ──────────────────────────────────────────── */}
                         <tbody>
                             {rows.map((row, rowIdx) => {
-                                const isEven = rowIdx % 2 === 0;
+                                const isEven      = rowIdx % 2 === 0;
+                                const isSelected  = drillRow === row;
+                                const isDrillable = Boolean(drillDownTo && drillDownKey);
+
                                 return (
                                     <tr
                                         key={rowIdx}
+                                        onClick={isDrillable ? () => handleDrillDown(row) : undefined}
+                                        aria-expanded={isSelected ? true : undefined}
                                         className={`
                                             border-b border-gray-50
                                             transition-colors duration-100
-                                            hover:bg-emerald-50/40
-                                            ${isEven ? 'bg-white' : 'bg-gray-50/30'}
+                                            ${isDrillable
+                                                ? 'cursor-pointer hover:bg-emerald-100/60'
+                                                : 'hover:bg-emerald-50/40'
+                                            }
+                                            ${isSelected
+                                                ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200'
+                                                : isEven ? 'bg-white' : 'bg-gray-50/30'
+                                            }
                                         `}
                                     >
                                         {columns.map((col) => {
-                                            const value    = row[col.key];
-                                            const align    = effectiveAlign(col);
+                                            const value     = row[col.key];
+                                            const align     = effectiveAlign(col);
                                             const isNumeric =
                                                 col.type === 'currency' ||
                                                 col.type === 'number'   ||
@@ -346,6 +534,18 @@ export function UniversalReportShell({
                     </table>
                 </div>
             </div>
+
+            {/* ── Drill-Down Panel ──────────────────────────────────────────────── */}
+            {drillRow && (
+                <DrillDownPanel
+                    loading={drillLoading}
+                    error={drillError}
+                    name={drillName}
+                    columns={drillColumns}
+                    payload={drillPayload}
+                    onClose={handleDrillClose}
+                />
+            )}
         </div>
     );
 }
@@ -393,6 +593,210 @@ function DataCell({ value, type, isNumeric }: DataCellProps) {
     );
 }
 
+// ─── DrillDownPanel ───────────────────────────────────────────────────────────
+
+interface DrillDownPanelProps {
+    loading:  boolean;
+    error:    string | null;
+    name:     string;
+    columns:  ColumnSpec[];
+    payload:  UniversalPayload | null;
+    onClose:  () => void;
+}
+
+/**
+ * Rendered below the main table card when the user clicks a drillable row.
+ *
+ * Visual design:
+ *  - Animated slide-down entrance
+ *  - Left border accent in emerald-500 (signals "child of" relationship)
+ *  - Header: "↳ Detail: {reportName}" + close ×
+ *  - Loading: 6 pulsing skeleton rows
+ *  - Error: inline rose-tinted alert
+ *  - Data: same formatCell / ALIGN_CLASS helpers as the parent table
+ *  - Empty: brief "No matching records" notice
+ */
+function DrillDownPanel({ loading, error, name, columns, payload, onClose }: DrillDownPanelProps) {
+    const rows   = payload?.rows   ?? [];
+    const totals = payload?.totals ?? {};
+
+    return (
+        <div
+            className="bg-white rounded-2xl border border-gray-200 border-l-4 border-l-emerald-500 shadow-md overflow-hidden animate-in slide-in-from-top-2 duration-200"
+            role="region"
+            aria-label={`Detail view: ${name}`}
+        >
+            {/* Panel header */}
+            <div className="px-6 py-3.5 border-b border-gray-100 bg-emerald-50/50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <ChevronDown className="h-3.5 w-3.5 text-emerald-600 rotate-[-90deg]" aria-hidden="true" />
+                    <span className="text-[12px] font-bold text-stone-900">
+                        ↳ Detail: <span className="text-emerald-700">{name}</span>
+                    </span>
+                    {!loading && !error && payload && (
+                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                            {rows.length} {rows.length === 1 ? 'row' : 'rows'}
+                        </span>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                    aria-label="Close detail panel"
+                >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+            </div>
+
+            {/* ── Loading skeleton ──────────────────────────────────────────── */}
+            {loading && (
+                <div className="px-6 py-4 space-y-3" aria-busy="true" aria-label="Loading detail data">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="flex gap-4 animate-pulse">
+                            <div className="h-4 bg-gray-200 rounded flex-1" style={{ opacity: 1 - i * 0.12 }} />
+                            <div className="h-4 bg-gray-200 rounded w-24"  style={{ opacity: 1 - i * 0.12 }} />
+                            <div className="h-4 bg-gray-200 rounded w-28"  style={{ opacity: 1 - i * 0.12 }} />
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── Error state ───────────────────────────────────────────────── */}
+            {!loading && error && (
+                <div className="px-6 py-5 flex items-start gap-3">
+                    <div className="p-2 bg-rose-50 rounded-xl shrink-0">
+                        <X className="h-4 w-4 text-rose-500" aria-hidden="true" />
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-stone-900">Failed to load details</p>
+                        <p className="text-xs text-rose-600 mt-0.5 leading-relaxed">{error}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* ── UNAUTHORIZED from drill-down generateReport ───────────────── */}
+            {!loading && !error && payload?.error === 'UNAUTHORIZED' && (
+                <div className="px-6 py-5 flex items-center gap-3">
+                    <ShieldOff className="h-5 w-5 text-red-400 shrink-0" aria-hidden="true" />
+                    <p className="text-sm text-gray-500">
+                        You don&apos;t have permission to view the detail for this report.
+                    </p>
+                </div>
+            )}
+
+            {/* ── Empty detail set ──────────────────────────────────────────── */}
+            {!loading && !error && payload && !payload.error && rows.length === 0 && (
+                <div className="px-6 py-6 flex items-center gap-3 text-gray-400">
+                    <Inbox className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    <p className="text-sm">No matching records found for this selection.</p>
+                </div>
+            )}
+
+            {/* ── Data table ────────────────────────────────────────────────── */}
+            {!loading && !error && payload && !payload.error && rows.length > 0 && columns.length > 0 && (
+                <div className="overflow-x-auto">
+                    <table
+                        className="w-full text-sm border-collapse"
+                        style={{ minWidth: `${Math.max(columns.length * 140, 700)}px` }}
+                    >
+                        <thead>
+                            <tr className="bg-gray-50 border-b border-gray-100">
+                                {columns.map((col) => (
+                                    <th
+                                        key={col.key}
+                                        scope="col"
+                                        className={`
+                                            px-5 py-2.5
+                                            text-[10px] font-bold uppercase tracking-widest
+                                            text-gray-500 whitespace-nowrap select-none
+                                            ${ALIGN_CLASS[effectiveAlign(col)]}
+                                        `}
+                                    >
+                                        {col.label}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row, idx) => {
+                                const isEven = idx % 2 === 0;
+                                return (
+                                    <tr
+                                        key={idx}
+                                        className={`
+                                            border-b border-gray-50
+                                            transition-colors duration-100
+                                            hover:bg-emerald-50/30
+                                            ${isEven ? 'bg-white' : 'bg-gray-50/20'}
+                                        `}
+                                    >
+                                        {columns.map((col) => {
+                                            const isNumeric =
+                                                col.type === 'currency' ||
+                                                col.type === 'number'   ||
+                                                col.type === 'percent';
+                                            return (
+                                                <td
+                                                    key={col.key}
+                                                    className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
+                                                >
+                                                    <DataCell
+                                                        value={row[col.key]}
+                                                        type={col.type}
+                                                        isNumeric={isNumeric}
+                                                    />
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                        {/* Totals row for drill-down detail */}
+                        {columns.some((c) => c.total) && Object.keys(totals).length > 0 && (() => {
+                            let leading = 0;
+                            for (const col of columns) {
+                                if (col.total) break;
+                                leading++;
+                            }
+                            const leadingSpan = Math.max(leading, 1);
+                            return (
+                                <tfoot>
+                                    <tr className="bg-gray-50 border-t-2 border-gray-200">
+                                        <td colSpan={leadingSpan} className="px-5 py-3">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                                Subtotal
+                                            </span>
+                                        </td>
+                                        {columns.slice(leadingSpan).map((col) => {
+                                            const tv = col.total && totals[col.key] !== undefined
+                                                ? totals[col.key]
+                                                : undefined;
+                                            return (
+                                                <td
+                                                    key={col.key}
+                                                    className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
+                                                >
+                                                    {tv !== undefined ? (
+                                                        <span className="font-black text-[13px] text-stone-900 tabular-nums">
+                                                            {formatCell(tv, col.type)}
+                                                        </span>
+                                                    ) : null}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                </tfoot>
+                            );
+                        })()}
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── AsyncQueuedBanner ────────────────────────────────────────────────────────
 
 /**
@@ -414,8 +818,8 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
             </h3>
             <p className="text-sm text-gray-500 max-w-sm leading-relaxed">
                 This report spans a large dataset and is being generated in the
-                background. You can safely navigate away — we'll notify you when
-                it's ready.
+                background. You can safely navigate away — we&apos;ll notify you when
+                it&apos;s ready.
             </p>
 
             {jobId && (
@@ -441,6 +845,47 @@ function EmptyState() {
                 Your current filter combination returned zero results. Try widening
                 the date range.
             </p>
+        </div>
+    );
+}
+
+// ─── AccessDeniedState ────────────────────────────────────────────────────────
+
+/**
+ * Rendered when generateReport() returns { error: 'UNAUTHORIZED' }.
+ *
+ * Design mirrors EmptyState / AsyncQueuedBanner so all three non-data states
+ * share the same visual language: centered card, icon, headline, body copy.
+ *
+ * IMPORTANT: We deliberately show a generic message rather than revealing
+ * which permission key is missing — doing so could assist privilege escalation
+ * attempts in a multi-tenant environment.
+ */
+function AccessDeniedState() {
+    return (
+        <div className="flex flex-col items-center justify-center bg-white rounded-2xl border border-red-100 shadow-sm py-20 px-6 text-center">
+            {/* Icon container */}
+            <div className="relative mb-5">
+                <div className="absolute inset-0 rounded-full bg-red-400/10 animate-ping" />
+                <div className="relative p-4 bg-red-50 border border-red-200 rounded-2xl inline-flex">
+                    <ShieldOff className="h-8 w-8 text-red-500" aria-hidden="true" />
+                </div>
+            </div>
+
+            <h3 className="font-black text-stone-900 text-base mb-1">
+                Access Denied
+            </h3>
+            <p className="text-sm text-gray-500 max-w-sm leading-relaxed">
+                You don&apos;t have the required permissions to view this report.
+                Please contact your system administrator if you believe this is
+                an error.
+            </p>
+
+            {/* Role hint pill */}
+            <div className="mt-5 inline-flex items-center gap-2 bg-red-50 border border-red-100 text-red-500 text-[11px] font-bold px-3 py-1.5 rounded-full select-none">
+                <ShieldOff className="h-3 w-3" aria-hidden="true" />
+                Insufficient permissions
+            </div>
         </div>
     );
 }

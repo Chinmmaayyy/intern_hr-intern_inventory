@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
+import { assertReportAccess, MISAccessDeniedError } from './rbac';
 import { 
   dailyRevenueReport,
   billingDetailReport,
@@ -86,11 +87,9 @@ export async function runReport(
     throw new Error(`Report ${reportId} not found`);
   }
 
-  // TODO: Re-enable permission check before production release
-  // 1. Check permissions (temporarily bypassed for Day 1 frontend integration)
-  // if (!userPermissions.includes(reportDef.requiredPermission)) {
-  //   throw new Error(`Forbidden: missing ${reportDef.requiredPermission}`);
-  // }
+  // 1. Check permissions — throws MISAccessDeniedError if the user's role
+  //    does not include the report's requiredPermission.
+  assertReportAccess(reportDef.requiredPermission, userPermissions);
 
   // 2. Validate filters
   const parsedFilters = reportDef.filters.safeParse(rawFilters);

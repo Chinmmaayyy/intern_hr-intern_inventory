@@ -213,7 +213,10 @@ export const billingSummaryReport: ReportDefinition = {
     { key: 'invoice_count', label: 'Invoice Count', type: 'number', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
-  rowLimitSync: 5000,
+  rowLimitSync: 0, // TEMP: force async path for Phase 4 testing — revert to 5000 before production
+  // Drill-down: clicking a date row opens billing-detail filtered to that date.
+  drillDownTo:  'billing-detail',
+  drillDownKey: 'date',
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id } = filters;
@@ -519,7 +522,7 @@ export const billingDiscountSummaryReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.billing.view',
+  requiredPermission: 'mis_reports.billing.admin',  // Discount authorisations — finance/admin only
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -838,7 +841,7 @@ export const billingDoctorPayoutReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.billing.view',
+  requiredPermission: 'mis_reports.billing.admin',  // Doctor payroll data — finance/admin only
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -896,7 +899,7 @@ export const billingDoctorAccountPayableReport: ReportDefinition = {
   ],
   defaultSort: { column: 'balance_payable', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.billing.view',
+  requiredPermission: 'mis_reports.billing.admin',  // Accounts payable — finance/admin only
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`

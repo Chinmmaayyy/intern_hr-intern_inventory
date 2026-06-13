@@ -43,7 +43,8 @@ export interface ReportDefinition {
   rowLimitSync: number;                // default 5000 — above this triggers async job
   queryFn: (filters: ValidatedFilters, orgId: string) => Promise<{ rows: Record<string, unknown>[]; totals: Record<string, number> }>;
   chartSpec?: ChartSpec;               // optional Chart.js spec for visual reports
-  drillDownTo?: string;                // report_id of the detail report for drill-down
+  drillDownTo?:  string;               // report_id of the detail report for drill-down
+  drillDownKey?: string;               // row field whose value is forwarded as filter param to drillDownTo
   requiredPermission: string;          // e.g. "mis_reports.billing.view"
   moduleFlag?: string;                 // e.g. "optical" — hides report if module disabled
 }
