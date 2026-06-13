@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { listIndents, createIndent, getIndentById, issueIndentItems } from '@/app/actions/indent-actions';
+import { listIndents, createIndent, getIndentById, issueIndentItems, approveIndent } from '@/app/actions/indent-actions';
 import { listStores } from '@/app/actions/store-actions';
 import { listItems } from '@/app/actions/item-master-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
@@ -21,6 +21,19 @@ export default function IndentsListPage() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [issueQtyMap, setIssueQtyMap] = useState<Record<number, number>>({});
   const [issuingLineId, setIssuingLineId] = useState<number | null>(null);
+  const [approving, setApproving] = useState(false);
+
+  const formatPriority = (priority?: string) => {
+    if (priority === 'EMERGENCY') return 'Emergency';
+    if (priority === 'URGENT') return 'Urgent';
+    return 'Routine';
+  };
+
+  const priorityClass = (priority?: string) => {
+    if (priority === 'NORMAL') return 'bg-blue-100 text-blue-700';
+    if (priority === 'URGENT') return 'bg-amber-100 text-amber-700';
+    return 'bg-rose-100 text-rose-700 font-bold';
+  };
 
   // Create Modal Form
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -126,20 +139,44 @@ export default function IndentsListPage() {
     }
   };
 
-  const handleIssueItem = async (itemId: number) => {
-    const qty = issueQtyMap[itemId];
+  const handleApproveIndent = async () => {
+    if (!selectedIndent?.items?.length) return;
+    setApproving(true);
+    const res = await approveIndent(
+      selectedIndent.id,
+      selectedIndent.items.map((i: any) => ({
+        item_id: i.item_id,
+        qty_approved: i.qty_requested,
+      }))
+    );
+    setApproving(false);
+    if (res.success) {
+      const detailRes = await getIndentById(selectedIndent.id);
+      if (detailRes.success) setSelectedIndent(detailRes.data);
+      loadData();
+    } else {
+      alert(res.error || 'Failed to approve indent.');
+    }
+  };
+
+  const handleIssueItem = async (masterItemId: number) => {
+    const qty = issueQtyMap[masterItemId];
     if (!qty || qty <= 0) {
       alert('Please specify a valid issue quantity.');
       return;
     }
-    setIssuingLineId(itemId);
-    const res = await issueIndentItems(selectedIndent.id, [{ item_id: itemId, quantity: qty }]);
+    setIssuingLineId(masterItemId);
+    const res = await issueIndentItems(selectedIndent.id, [{ item_id: masterItemId, quantity: qty }]);
     setIssuingLineId(null);
     if (res.success) {
-      // Reload detail
       const detailRes = await getIndentById(selectedIndent.id);
       if (detailRes.success) {
         setSelectedIndent(detailRes.data);
+        const initialMap: Record<number, number> = {};
+        detailRes.data.items?.forEach((i: any) => {
+          initialMap[i.item_id] = Math.max(0, (i.qty_requested || 0) - (i.qty_issued || 0));
+        });
+        setIssueQtyMap(initialMap);
       }
       loadData();
     } else {
@@ -229,18 +266,14 @@ export default function IndentsListPage() {
                   <td className="py-3.5 px-4 font-mono font-bold text-indigo-600">{ind.indent_number}</td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">{ind.requesting_store?.name}</span>
+                      <span className="font-semibold text-gray-900">{ind.from_store?.name}</span>
                       <ArrowRightLeft size={12} className="text-gray-400" />
-                      <span className="text-gray-500">{ind.supplying_store?.name}</span>
+                      <span className="text-gray-500">{ind.to_store?.name}</span>
                     </div>
                   </td>
                   <td className="py-3.5 px-4">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${
-                      ind.urgency === 'Routine' ? 'bg-blue-100 text-blue-700' :
-                      ind.urgency === 'Urgent' ? 'bg-amber-100 text-amber-700' :
-                      'bg-rose-100 text-rose-700 font-bold'
-                    }`}>
-                      {ind.urgency}
+                    <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${priorityClass(ind.priority)}`}>
+                      {formatPriority(ind.priority)}
                     </span>
                   </td>
                   <td className="py-3.5 px-4">
@@ -449,21 +482,33 @@ export default function IndentsListPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-gray-50 p-4 border border-gray-200 rounded-lg text-xs text-gray-700 mb-6">
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Req. Store</span>
-                <span className="font-semibold text-gray-900">{selectedIndent.requesting_store?.name}</span>
+                <span className="font-semibold text-gray-900">{selectedIndent.from_store?.name}</span>
               </div>
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Supplying Store</span>
-                <span className="font-semibold text-gray-900">{selectedIndent.supplying_store?.name}</span>
+                <span className="font-semibold text-gray-900">{selectedIndent.to_store?.name}</span>
               </div>
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Urgency</span>
-                <span className="font-semibold text-gray-900">{selectedIndent.urgency}</span>
+                <span className="font-semibold text-gray-900">{formatPriority(selectedIndent.priority)}</span>
               </div>
               <div>
                 <span className="block text-[10px] text-gray-500 uppercase font-bold">Current Status</span>
                 <span className="font-semibold text-gray-900">{selectedIndent.status}</span>
               </div>
             </div>
+
+            {selectedIndent.status === 'Submitted' && (
+              <div className="mb-4 flex justify-end">
+                <button
+                  onClick={handleApproveIndent}
+                  disabled={approving}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition disabled:opacity-50"
+                >
+                  {approving ? 'Approving...' : 'Approve Indent'}
+                </button>
+              </div>
+            )}
 
             {/* Line Items Table with Issuing Action */}
             <div className="space-y-4">
@@ -477,23 +522,23 @@ export default function IndentsListPage() {
                       <th className="py-2.5 px-3">Item Details</th>
                       <th className="py-2.5 px-3 text-right">Req. Qty</th>
                       <th className="py-2.5 px-3 text-right">Issued Qty</th>
-                      {['Submitted', 'Approved', 'Partially Issued'].includes(selectedIndent.status) && (
+                      {['Approved', 'Partially Issued'].includes(selectedIndent.status) && (
                         <th className="py-2.5 px-3 text-center w-52">Material Issue Dispatch</th>
                       )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 text-gray-700">
                     {selectedIndent.items?.map((item: any) => {
-                      const pending = item.quantity_requested - (item.quantity_issued || 0);
+                      const pending = (item.qty_approved || item.qty_requested) - (item.qty_issued || 0);
                       return (
                         <tr key={item.id} className="hover:bg-gray-50">
                           <td className="py-3 px-3">
                             <div className="font-semibold text-gray-900">{item.item?.name}</div>
                             <div className="text-[10px] text-gray-500">{item.item?.item_code} | UOM: {item.item?.base_uom}</div>
                           </td>
-                          <td className="py-3 px-3 text-right font-medium text-gray-900">{item.quantity_requested}</td>
-                          <td className="py-3 px-3 text-right text-gray-500">{item.quantity_issued || 0}</td>
-                          {['Submitted', 'Approved', 'Partially Issued'].includes(selectedIndent.status) && (
+                          <td className="py-3 px-3 text-right font-medium text-gray-900">{item.qty_requested}</td>
+                          <td className="py-3 px-3 text-right text-gray-500">{item.qty_issued || 0}</td>
+                          {['Approved', 'Partially Issued'].includes(selectedIndent.status) && (
                             <td className="py-3 px-3 text-center">
                               {pending <= 0 ? (
                                 <span className="inline-flex bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold">
@@ -505,16 +550,16 @@ export default function IndentsListPage() {
                                     type="number"
                                     min="1"
                                     max={pending}
-                                    value={issueQtyMap[item.id] || ''}
-                                    onChange={(e) => setIssueQtyMap({ ...issueQtyMap, [item.id]: parseInt(e.target.value) || 0 })}
+                                    value={issueQtyMap[item.item_id] || ''}
+                                    onChange={(e) => setIssueQtyMap({ ...issueQtyMap, [item.item_id]: parseInt(e.target.value) || 0 })}
                                     className="bg-white border border-gray-200 rounded px-1.5 py-1 text-center w-14 text-gray-900 text-xs"
                                   />
                                   <button
-                                    onClick={() => handleIssueItem(item.id)}
-                                    disabled={issuingLineId === item.id}
+                                    onClick={() => handleIssueItem(item.item_id)}
+                                    disabled={issuingLineId === item.item_id}
                                     className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[10px] px-2.5 py-1.5 rounded transition disabled:opacity-50 cursor-pointer"
                                   >
-                                    {issuingLineId === item.id ? 'Dispatching' : 'Dispatch'}
+                                    {issuingLineId === item.item_id ? 'Dispatching' : 'Dispatch'}
                                   </button>
                                 </div>
                               )}

@@ -60,7 +60,7 @@ export async function postGrnToGL(grnId: number) {
     const journalNumber = `JE-GRN-${grnId}-${Date.now()}`;
     const periodId = await getOpenPeriodId(orgId);
 
-    await prisma.gL_JournalEntry.create({
+    const entry = await prisma.gL_JournalEntry.create({
       data: {
         journal_number: journalNumber,
         organizationId: orgId,
@@ -81,7 +81,13 @@ export async function postGrnToGL(grnId: number) {
         },
       },
     });
-    return { success: true };
+
+    await prisma.inventoryMovement.updateMany({
+      where: { source_type: 'GRN', source_id: grnId.toString(), organizationId: orgId, gl_journal_id: null },
+      data: { gl_journal_id: entry.id },
+    });
+
+    return { success: true, journalId: entry.id };
   } catch (e: unknown) {
     const err = e as Error;
     console.error('postGrnToGL error:', err);

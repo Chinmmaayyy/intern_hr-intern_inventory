@@ -3,7 +3,7 @@ import { requireTenantContext } from '@/backend/tenant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { postChargeToIpdBill } from '@/app/actions/ipd-finance-actions';
-import { postConsumptionToGL } from '@/app/actions/inventory-gl-actions';
+import { postConsumptionToGL, postAdjustmentToGL } from '@/app/actions/inventory-gl-actions';
 
 function serialize<T>(d: T): T {
   return JSON.parse(JSON.stringify(d, (_, v) =>
@@ -128,7 +128,7 @@ export async function createStoreTransfer(input: unknown) {
       return t;
     });
 
-    revalidatePath('/inventory/transfers');
+    revalidatePath('/admin/inventory/transfers');
     return { success: true, data: serialize(transfer) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -204,7 +204,7 @@ export async function createStockCountSession(store_id: number) {
       },
       include: { lines: true },
     });
-    revalidatePath('/inventory/counts');
+    revalidatePath('/admin/inventory/counts');
     return { success: true, data: serialize(countSession) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -234,6 +234,8 @@ export async function approveCountSession(session_id: number) {
       include: { lines: true },
     });
     if (!countSession) return { success: false, error: 'Count session not found' };
+
+    const adjustmentLines: Array<{ item_id: number; quantity_delta: number; unit_cost: number; source_id: string }> = [];
 
     await db.$transaction(async (tx: any) => {
       const adjNumber = `ADJ-${Date.now()}`;
@@ -282,6 +284,12 @@ export async function approveCountSession(session_id: number) {
               reason: 'Physical count variance',
             },
           });
+          adjustmentLines.push({
+            item_id: line.item_id,
+            quantity_delta: variance,
+            unit_cost: unitCost,
+            source_id: `${adj.id}-${line.item_id}`,
+          });
         }
       }
 
@@ -291,8 +299,20 @@ export async function approveCountSession(session_id: number) {
       });
     });
 
+    for (const line of adjustmentLines) {
+      await postAdjustmentToGL({
+        organizationId,
+        item_id: line.item_id,
+        quantity_delta: line.quantity_delta,
+        unit_cost: line.unit_cost,
+        store_id: countSession.store_id,
+        source_id: line.source_id,
+        reason: 'Physical count variance',
+      });
+    }
+
     // Trigger GL posting for adjustment
-    revalidatePath('/inventory/counts');
+    revalidatePath('/admin/inventory/stock-counts');
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -353,7 +373,7 @@ export async function quarantineBatch(batch_id: number, is_quarantined = true) {
     await db.system_audit_logs.create({
       data: { action: is_quarantined ? 'QUARANTINE_BATCH' : 'RELEASE_BATCH', module: 'inventory', details: `Batch ID: ${batch_id}`, organizationId, user_id: session.id, username: session.username, role: session.role },
     });
-    revalidatePath('/inventory/adjustments');
+    revalidatePath('/admin/inventory/adjustments');
     return { success: true, data: serialize(batch) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -465,7 +485,7 @@ export async function recordConsumption(input: {
     }
 
     // Post to GL
-    await postConsumptionToGL({
+    const glRes = await postConsumptionToGL({
       organizationId,
       item_id: item.id,
       quantity: input.quantity,
@@ -474,6 +494,13 @@ export async function recordConsumption(input: {
       source_id: result.movement.source_id,
       description: `Consumption of ${item.name} from ${store.name}`
     });
+
+    if (glRes.success && glRes.journalId) {
+      await db.inventoryMovement.update({
+        where: { id: result.movement.id },
+        data: { gl_journal_id: glRes.journalId },
+      });
+    }
 
     await db.system_audit_logs.create({
       data: {

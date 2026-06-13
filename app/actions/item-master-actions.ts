@@ -100,7 +100,7 @@ export async function createItemCategory(input: unknown) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -122,7 +122,7 @@ export async function updateItemCategory(id: number, input: unknown) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -240,7 +240,7 @@ export async function createItem(input: unknown) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -262,7 +262,7 @@ export async function updateItem(id: number, input: unknown) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -286,7 +286,7 @@ export async function approveItem(id: number) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -317,7 +317,7 @@ export async function discontinueItem(id: number, reason: string) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -395,7 +395,7 @@ export async function importItems(rows: Record<string, string>[], dryRun = true)
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/items');
+    revalidatePath('/admin/inventory/items');
     return { success: true, dryRun: false, results, created, errors: 0 };
   } catch (e: any) {
     return { success: false, error: e.message };

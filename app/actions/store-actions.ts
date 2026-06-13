@@ -72,7 +72,7 @@ export async function createStore(input: unknown) {
         organizationId, user_id: session.id, username: session.username, role: session.role,
       },
     });
-    revalidatePath('/inventory/stores');
+    revalidatePath('/admin/inventory/stores');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -87,7 +87,7 @@ export async function updateStore(id: number, input: unknown) {
     }
     const data = storeSchema.partial().parse(input);
     const row = await db.store.update({ where: { id } as any, data });
-    revalidatePath('/inventory/stores');
+    revalidatePath('/admin/inventory/stores');
     return { success: true, data: serialize(row) };
   } catch (e: any) {
     return { success: false, error: e.message };

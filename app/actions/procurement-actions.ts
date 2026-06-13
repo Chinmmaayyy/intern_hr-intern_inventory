@@ -111,7 +111,7 @@ export async function createRequisition(input: unknown) {
     await db.system_audit_logs.create({
       data: { action: 'CREATE_PR', module: 'inventory', details: `Created PR: ${prNumber}`, organizationId, user_id: session.id, username: session.username, role: session.role },
     });
-    revalidatePath('/inventory/procurement/requisitions');
+    revalidatePath('/admin/inventory/procurement/requisitions');
     return { success: true, data: serialize(pr) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -126,7 +126,7 @@ export async function approveRequisition(id: number) {
       where: { id } as any,
       data: { status: 'Approved', approved_by: session.id, approved_at: new Date() },
     });
-    revalidatePath('/inventory/procurement/requisitions');
+    revalidatePath('/admin/inventory/procurement/requisitions');
     return { success: true, data: serialize(pr) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -188,7 +188,7 @@ export async function createPurchaseOrder(input: unknown) {
     await db.system_audit_logs.create({
       data: { action: 'CREATE_PO', module: 'inventory', details: `Created PO: ${poNumber}`, organizationId, user_id: session.id, username: session.username, role: session.role },
     });
-    revalidatePath('/inventory/procurement/purchase-orders');
+    revalidatePath('/admin/inventory/procurement/purchase-orders');
     return { success: true, data: serialize(po) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -382,7 +382,7 @@ export async function approvePurchaseOrder(id: number) {
       where: { id } as any,
       data: { status: 'Approved', approved_by: session.id, approved_at: new Date() },
     });
-    revalidatePath('/inventory/procurement/purchase-orders');
+    revalidatePath('/admin/inventory/procurement/purchase-orders');
     return { success: true, data: serialize(po) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -543,7 +543,7 @@ export async function createGRN(input: unknown) {
     // Trigger GL posting asynchronously
     import('./inventory-gl-actions').then(m => m.postGrnToGL(result.id).catch(console.error));
 
-    revalidatePath('/inventory/procurement/grn');
+    revalidatePath('/admin/inventory/procurement/grn');
     return { success: true, data: serialize(result) };
   } catch (e: any) {
     return { success: false, error: e.message };

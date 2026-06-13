@@ -88,7 +88,7 @@ export async function createIndent(input: unknown) {
     await db.system_audit_logs.create({
       data: { action: 'CREATE_INDENT', module: 'inventory', details: `Created Indent: ${indentNumber}`, organizationId, user_id: session.id, username: session.username, role: session.role },
     });
-    revalidatePath('/inventory/indents');
+    revalidatePath('/admin/inventory/indents');
     return { success: true, data: serialize(indent) };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -133,7 +133,7 @@ export async function approveIndent(id: number, approvedItems: Array<{ item_id: 
         });
       }
     });
-    revalidatePath('/inventory/indents');
+    revalidatePath('/admin/inventory/indents');
     return { success: true };
   } catch (e: any) {
     return { success: false, error: e.message };
@@ -269,7 +269,7 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
       });
     });
 
-    revalidatePath('/inventory/indents');
+    revalidatePath('/admin/inventory/indents');
     return { success: true, issueNumber };
   } catch (e: any) {
     return { success: false, error: e.message };
