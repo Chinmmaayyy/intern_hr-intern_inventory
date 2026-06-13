@@ -90,6 +90,9 @@ model Organization {
   leave_requests                LeaveRequest[]
   shift_patterns                ShiftPattern[]
   shift_assignments             ShiftAssignment[]
+  shift_swap_requests           ShiftSwapRequest[]
+  coverage_rules                CoverageRule[]
+  holidays                      Holiday[]
   notifications                 Notification[]
   expense_categories            ExpenseCategory[]
   vendors                       Vendor[]
@@ -2300,15 +2303,22 @@ model LeaveRequest {
 }
 
 model ShiftPattern {
-  id             Int      @id @default(autoincrement())
-  name           String
-  start_time     String // "08:00"
-  end_time       String // "16:00"
-  organizationId String
-  created_at     DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  name            String
+  start_time      String // "08:00"
+  end_time        String // "16:00"
+  shift_category  String   @default("GENERAL") // MORNING, EVENING, NIGHT, ROTATING, GENERAL, ON_CALL
+  is_overnight    Boolean  @default(false)
+  break_minutes   Int      @default(0)
+  color           String   @default("#3B82F6") // hex color for UI
+  night_allowance Float    @default(0)
+  is_active       Boolean  @default(true)
+  organizationId  String
+  created_at      DateTime @default(now())
 
-  organization Organization      @relation(fields: [organizationId], references: [id])
-  assignments  ShiftAssignment[]
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  assignments    ShiftAssignment[]
+  coverage_rules CoverageRule[]
 
   @@index([organizationId])
   @@map("shift_patterns")
@@ -2319,6 +2329,8 @@ model ShiftAssignment {
   employee_id      Int
   shift_pattern_id Int
   date             DateTime
+  status           String   @default("ASSIGNED") // ASSIGNED, SWAP_PENDING, SWAPPED, CANCELLED
+  notes            String?
   organizationId   String
   created_at       DateTime @default(now())
 
@@ -2326,10 +2338,67 @@ model ShiftAssignment {
   employee      Employee     @relation(fields: [employee_id], references: [id])
   shift_pattern ShiftPattern @relation(fields: [shift_pattern_id], references: [id])
 
+  @@unique([employee_id, date, organizationId])
   @@index([organizationId])
   @@index([employee_id])
   @@index([date])
   @@map("shift_assignments")
+}
+
+model ShiftSwapRequest {
+  id                      Int      @id @default(autoincrement())
+  requester_assignment_id Int
+  target_assignment_id    Int
+  requester_employee_id   Int
+  target_employee_id      Int
+  status                  String   @default("PENDING") // PENDING, ACCEPTED, ADMIN_APPROVED, REJECTED, CANCELLED
+  requester_reason        String?
+  admin_notes             String?
+  responded_at            DateTime?
+  approved_at             DateTime?
+  approved_by             String?
+  organizationId          String
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("shift_swap_requests")
+}
+
+model CoverageRule {
+  id               Int      @id @default(autoincrement())
+  department_id    String
+  shift_pattern_id Int
+  designation      String?  // e.g. "Nurse", null = any designation
+  min_staff        Int      @default(1)
+  is_active        Boolean  @default(true)
+  organizationId   String
+  created_at       DateTime @default(now())
+
+  organization  Organization @relation(fields: [organizationId], references: [id])
+  shift_pattern ShiftPattern @relation(fields: [shift_pattern_id], references: [id])
+
+  @@index([organizationId])
+  @@map("coverage_rules")
+}
+
+model Holiday {
+  id             Int      @id @default(autoincrement())
+  name           String
+  date           DateTime
+  type           String   @default("NATIONAL") // NATIONAL, FESTIVAL, OPTIONAL, RESTRICTED
+  is_optional    Boolean  @default(false)
+  organizationId String
+  created_at     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([date, organizationId])
+  @@index([organizationId])
+  @@map("holidays")
 }
 
 // ========================================

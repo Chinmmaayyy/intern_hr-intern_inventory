@@ -4,7 +4,7 @@ import {
     Users, UserCog, Building2, ShieldCheck, UserRound,
     Settings, Palette, FileText, Bell, Plug, Clock, BarChart3, Lock,
     Workflow, Scissors, GitBranch, DatabaseBackup, BookOpen, Database,
-    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList,
+    ShieldAlert, Scale, Siren, SlidersHorizontal, LayoutList, CalendarDays, Repeat, Calendar,
     type LucideIcon,
 } from 'lucide-react';
 
@@ -55,6 +55,14 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
             { label: 'HR', href: '/admin/hr', icon: Briefcase },
             { label: 'Operation Theatre', href: '/admin/ot/dashboard', icon: Scissors },
             { label: 'Emergency Room', href: '/admin/er/dashboard', icon: Siren },
+        ],
+    },
+    {
+        title: 'Roster & Shifts',
+        collapsible: true,
+        items: [
+            { label: 'Roster Planner', href: '/admin/hr/roster', icon: CalendarDays },
+            { label: 'Shift Swaps', href: '/admin/hr/swaps', icon: Repeat },
         ],
     },
     {
