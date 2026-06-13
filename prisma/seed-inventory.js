@@ -374,8 +374,15 @@ async function main() {
     // 9. Seed Store-Item Settings
     for (const store of seededStores) {
         for (const item of seededItems) {
-            await prisma.storeItemSetting.create({
-                data: {
+            await prisma.storeItemSetting.upsert({
+                where: { store_id_item_id: { store_id: store.id, item_id: item.id } },
+                update: {
+                    par_level: item.max_level || 50,
+                    reorder_point: item.reorder_point || 10,
+                    max_level: item.max_level || 100,
+                    auto_indent: true,
+                },
+                create: {
                     store_id: store.id,
                     item_id: item.id,
                     par_level: item.max_level || 50,
@@ -389,8 +396,10 @@ async function main() {
     }
     console.log('Seeded store item par and reorder level settings');
     // 10. Seed Sample Requisitions
-    const requisition = await prisma.purchaseRequisition.create({
-        data: {
+    const requisition = await prisma.purchaseRequisition.upsert({
+        where: { pr_number: 'PR-2026-0001' },
+        update: { status: 'Submitted' },
+        create: {
             pr_number: 'PR-2026-0001',
             requesting_store_id: central.id,
             status: 'Submitted',
@@ -406,8 +415,10 @@ async function main() {
     });
     console.log(`Seeded sample purchase requisition: ${requisition.pr_number}`);
     // 11. Seed Sample Indents
-    const indent = await prisma.indent.create({
-        data: {
+    const indent = await prisma.indent.upsert({
+        where: { indent_number: 'IND-2026-0001' },
+        update: { status: 'Submitted' },
+        create: {
             indent_number: 'IND-2026-0001',
             from_store_id: ward.id,
             to_store_id: central.id,

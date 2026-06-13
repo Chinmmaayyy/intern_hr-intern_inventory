@@ -24,6 +24,8 @@ export const metadata: Metadata = {
   keywords: "hospital management, AI triage, patient management, healthcare analytics, HIPAA compliant",
 };
 
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: Readonly<{
