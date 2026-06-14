@@ -3,7 +3,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { assertReportAccess, MISAccessDeniedError } from './rbac';
-import { 
+import {
   dailyRevenueReport,
   billingDetailReport,
   billingItemDetailReport,
@@ -273,35 +273,97 @@ export async function runReport(
 
   const filters = parsedFilters.data as ValidatedFilters;
 
-  // Assume row count check (mocking the expected logic)
-  const expectedRowCount = 100; // You'd do a fast count(*) query here based on filters
+  // ── 3. Row-count check: countFn path vs. sync-execute-and-check path ──────
+  //
+  // ## Strategy
+  //
+  //   A. countFn defined (large detail reports)
+  //      Call the fast COUNT(*) query to estimate result size BEFORE running
+  //      the full query. If the count exceeds rowLimitSync, queue a background
+  //      job immediately — we never load the full result set into memory.
+  //
+  //   B. countFn absent (aggregated/summary reports)
+  //      Execute queryFn synchronously. Summary reports (GROUP BY ...) always
+  //      return O(hundreds) of grouped rows, so the result is safe to load.
+  //      After execution, check rows.length — if it somehow exceeds the limit,
+  //      this indicates the report definition needs a countFn added.
+  //      In practice this path will never queue async because grouped reports
+  //      cannot exceed rowLimitSync (5000 grouped buckets = enormous date range).
+  //
+  // ## Why NOT always run the query and check rows.length
+  //   For row-level detail reports (billing-detail, pharmacy-ip-item-detail),
+  //   a naive query fetch of 100,000 rows into Node.js memory before deciding
+  //   "this should have been async" is an OOM risk and a slow response time.
+  //   countFn prevents this by paying only one cheap COUNT(*) round-trip.
 
-  // 3. Async handling if too large
-  if (expectedRowCount > reportDef.rowLimitSync) {
-    const job = await prisma.reportJob.create({
-      data: {
-        report_id: reportId,
-        filters_json: filters as Prisma.InputJsonValue,
-        requested_by: userId,
-        organizationId: orgId,
-        format: 'JSON',
-        status: 'Queued',
-      },
-    });
-    return { async: true, jobId: job.id };
+  if (reportDef.countFn) {
+    // ── Path A: cheap COUNT(*) pre-check ───────────────────────────────────
+    let estimatedRowCount: number;
+    try {
+      estimatedRowCount = await reportDef.countFn(filters, orgId);
+    } catch (countErr: any) {
+      // If the count query fails (e.g., table not yet migrated), log the error
+      // and fall through to sync execution rather than silently queuing async.
+      // This is the safer failure mode.
+      console.warn(
+        `[MIS Runner] countFn for "${reportId}" failed — falling through to sync execution.`,
+        countErr?.message
+      );
+      estimatedRowCount = 0;
+    }
+
+    if (estimatedRowCount > reportDef.rowLimitSync) {
+      // Queue a background Excel job. The worker (app/api/mis/worker/route.ts)
+      // will pick this up, call queryFn, generate the Excel buffer, and mark
+      // the job Completed with a file_key.
+      //
+      // format is always 'Excel' — the worker always produces .xlsx output.
+      // The previous runner used 'JSON' here, which was incorrect.
+      const job = await prisma.reportJob.create({
+        data: {
+          report_id:      reportId,
+          filters_json:   filters as Prisma.InputJsonValue,
+          requested_by:   userId,
+          organizationId: orgId,
+          format:         'Excel',
+          status:         'Queued',
+        },
+      });
+
+      console.info(
+        `[MIS Runner] "${reportId}" estimated ${estimatedRowCount} rows > ` +
+        `rowLimitSync(${reportDef.rowLimitSync}). Queued job ${job.id}.`
+      );
+
+      return { async: true, jobId: job.id };
+    }
+
+    // Count is within limit — fall through to sync execution below.
   }
 
-  // 4. Sync execution
+  // ── Path B (or Path A within-limit): Sync execution ────────────────────
   const { rows, totals } = await reportDef.queryFn(filters, orgId);
 
-  // 5. Log access
+  // Post-hoc check for reports without countFn: if the actual row count
+  // exceeds the sync limit, log a warning. The data is returned synchronously
+  // this time (it's already in memory), but operators should add countFn to
+  // the report definition to avoid this in future runs.
+  if (rows.length > reportDef.rowLimitSync) {
+    console.warn(
+      `[MIS Runner] "${reportId}" returned ${rows.length} rows synchronously, ` +
+      `which exceeds rowLimitSync(${reportDef.rowLimitSync}). ` +
+      `Add a countFn to this report definition to enable async routing.`
+    );
+  }
+
+  // 4. Log access
   await prisma.reportAccessLog.create({
     data: {
-      user_id: userId,
-      report_id: reportId,
+      user_id:      userId,
+      report_id:    reportId,
       filters_json: filters as Prisma.InputJsonValue,
-      row_count: rows.length,
-      action: 'MIS_GENERATE',
+      row_count:    rows.length,
+      action:       'MIS_GENERATE',
       organizationId: orgId,
     },
   });
@@ -312,8 +374,9 @@ export async function runReport(
     totals,
     meta: {
       generatedAt: new Date(),
-      reportName: reportDef.name,
-      rowCount: rows.length,
+      reportName:  reportDef.name,
+      rowCount:    rows.length,
     },
   };
 }
+

@@ -136,10 +136,30 @@ export const billingDetailReport: ReportDefinition = {
 
     return { rows: serializedRows, totals };
   },
+  // Fast COUNT(*) pre-check — mirrors the queryFn WHERE clause exactly,
+  // without SELECT columns, GROUP BY, or ORDER BY overhead.
+  // invoice_items is a large table; for a wide date range this can easily
+  // exceed rowLimitSync (5000), which is why this report defines countFn.
+  countFn: async (filters: ValidatedFilters, orgId: string): Promise<number> => {
+    const { date_start, date_end, department_id } = filters;
+    const result = await prisma.$queryRaw<[{ count: bigint }]>`
+      SELECT COUNT(*) as "count"
+      FROM invoice_items ii
+      JOIN invoices i ON ii.invoice_id = i.id
+      WHERE i."organizationId" = ${orgId}
+        AND i.status != 'cancelled'
+        AND i.created_at >= ${new Date(date_start)}
+        AND i.created_at <= ${new Date(date_end)}
+        ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
+    `;
+    // $queryRaw returns BigInt for COUNT — convert to Number for the runner.
+    return Number(result[0]?.count ?? 0);
+  },
 };
 
 export const billingItemDetailReport: ReportDefinition = {
   id: 'billing-item-detail',
+
   category: ReportCategory.Billing,
   name: 'Billing - Billing Item Detail',
   description: 'Item-level breakdown of quantities and amounts billed.',
@@ -213,9 +233,9 @@ export const billingSummaryReport: ReportDefinition = {
     { key: 'invoice_count', label: 'Invoice Count', type: 'number', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
-  rowLimitSync: 0, // TEMP: force async path for Phase 4 testing — revert to 5000 before production
+  rowLimitSync: 5000,
   // Drill-down: clicking a date row opens billing-detail filtered to that date.
-  drillDownTo:  'billing-detail',
+  drillDownTo: 'billing-detail',
   drillDownKey: 'date',
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
@@ -731,9 +751,9 @@ export const billingOpRefundReport: ReportDefinition = {
       acc.refund_amount += Number(row.refund_amount || 0);
       return acc;
     }, { refund_amount: 0 });
-    return { 
-      rows: rows.map(r => ({ ...r, refund_amount: Number(r.refund_amount) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({ ...r, refund_amount: Number(r.refund_amount) })),
+      totals
     };
   },
 };
@@ -807,15 +827,15 @@ export const billingDateWiseCashReport: ReportDefinition = {
       acc.net_cash_in_drawer += Number(row.net_cash_in_drawer || 0);
       return acc;
     }, { total_cash_collected: 0, total_cash_refunded: 0, net_cash_in_drawer: 0 });
-    
-    return { 
+
+    return {
       rows: rows.map(r => ({
         ...r,
         total_cash_collected: Number(r.total_cash_collected),
         total_cash_refunded: Number(r.total_cash_refunded),
         net_cash_in_drawer: Number(r.net_cash_in_drawer),
-      })), 
-      totals 
+      })),
+      totals
     };
   },
 };
@@ -869,14 +889,14 @@ export const billingDoctorPayoutReport: ReportDefinition = {
       acc.payout_amount += Number(row.payout_amount || 0);
       return acc;
     }, { billed_amount: 0, payout_amount: 0 });
-    
-    return { 
+
+    return {
       rows: rows.map(r => ({
         ...r,
         billed_amount: Number(r.billed_amount),
         payout_amount: Number(r.payout_amount),
-      })), 
-      totals 
+      })),
+      totals
     };
   },
 };
@@ -926,15 +946,15 @@ export const billingDoctorAccountPayableReport: ReportDefinition = {
       acc.balance_payable += Number(row.balance_payable || 0);
       return acc;
     }, { total_earned: 0, total_paid: 0, balance_payable: 0 });
-    
-    return { 
+
+    return {
       rows: rows.map(r => ({
         ...r,
         total_earned: Number(r.total_earned),
         total_paid: Number(r.total_paid),
         balance_payable: Number(r.balance_payable),
-      })), 
-      totals 
+      })),
+      totals
     };
   },
 };
@@ -999,15 +1019,15 @@ export const billingIpPackageReport: ReportDefinition = {
       acc.total_invoice += Number(row.total_invoice || 0);
       return acc;
     }, { package_amount: 0, additional_billed: 0, total_invoice: 0 });
-    
-    return { 
+
+    return {
       rows: rows.map(r => ({
         ...r,
         package_amount: Number(r.package_amount),
         additional_billed: Number(r.additional_billed),
         total_invoice: Number(r.total_invoice),
-      })), 
-      totals 
+      })),
+      totals
     };
   },
 };
@@ -1055,9 +1075,9 @@ export const billingHealthCheckupCountReport: ReportDefinition = {
       acc.total_revenue += Number(row.total_revenue || 0);
       return acc;
     }, { total_sold: 0, total_revenue: 0 });
-    return { 
-      rows: rows.map(r => ({ ...r, total_sold: Number(r.total_sold), total_revenue: Number(r.total_revenue) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({ ...r, total_sold: Number(r.total_sold), total_revenue: Number(r.total_revenue) })),
+      totals
     };
   },
 };
@@ -1085,7 +1105,7 @@ export const billingPayerAgreementExpiryReport: ReportDefinition = {
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { expiry_days_threshold } = filters;
     const threshold = Number(expiry_days_threshold) || 30;
-    
+
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         company_name as "payer_name",
@@ -1103,9 +1123,9 @@ export const billingPayerAgreementExpiryReport: ReportDefinition = {
         AND DATE_PART('day', contract_end - CURRENT_DATE) <= ${threshold}
       ORDER BY "days_to_expiry" ASC
     `;
-    return { 
-      rows: rows.map(r => ({ ...r, days_to_expiry: Number(r.days_to_expiry) })), 
-      totals: {} 
+    return {
+      rows: rows.map(r => ({ ...r, days_to_expiry: Number(r.days_to_expiry) })),
+      totals: {}
     };
   },
 };
@@ -1157,13 +1177,13 @@ export const billingDepositRefundReport: ReportDefinition = {
       acc.refund_amount += Number(row.refund_amount || 0);
       return acc;
     }, { original_deposit_amount: 0, refund_amount: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         original_deposit_amount: Number(r.original_deposit_amount),
-        refund_amount: Number(r.refund_amount) 
-      })), 
-      totals 
+        refund_amount: Number(r.refund_amount)
+      })),
+      totals
     };
   },
 };
@@ -1217,15 +1237,15 @@ export const billingPendingBillsReport: ReportDefinition = {
       acc.balance_due += Number(row.balance_due || 0);
       return acc;
     }, { billed_amount: 0, paid_amount: 0, balance_due: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         billed_amount: Number(r.billed_amount),
         paid_amount: Number(r.paid_amount),
         balance_due: Number(r.balance_due),
-        aging_days: Number(r.aging_days) 
-      })), 
-      totals 
+        aging_days: Number(r.aging_days)
+      })),
+      totals
     };
   },
 };
@@ -1271,14 +1291,14 @@ export const billingPaymentServiceTypeReport: ReportDefinition = {
       acc.outstanding += Number(row.outstanding || 0);
       return acc;
     }, { total_billed: 0, total_collected: 0, outstanding: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         total_billed: Number(r.total_billed),
         total_collected: Number(r.total_collected),
-        outstanding: Number(r.outstanding) 
-      })), 
-      totals 
+        outstanding: Number(r.outstanding)
+      })),
+      totals
     };
   },
 };
@@ -1327,15 +1347,15 @@ export const billingPaymentSummaryReport: ReportDefinition = {
       acc.total_collected += Number(row.total_collected || 0);
       return acc;
     }, { total_cash: 0, total_card: 0, total_upi: 0, total_collected: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         total_cash: Number(r.total_cash),
         total_card: Number(r.total_card),
         total_upi: Number(r.total_upi),
-        total_collected: Number(r.total_collected) 
-      })), 
-      totals 
+        total_collected: Number(r.total_collected)
+      })),
+      totals
     };
   },
 };
@@ -1383,15 +1403,15 @@ export const billingRevenueSummaryReport: ReportDefinition = {
       acc.outstanding_balance += Number(row.outstanding_balance || 0);
       return acc;
     }, { total_billed: 0, total_collected: 0, total_discount: 0, outstanding_balance: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         total_billed: Number(r.total_billed),
         total_collected: Number(r.total_collected),
         total_discount: Number(r.total_discount),
-        outstanding_balance: Number(r.outstanding_balance) 
-      })), 
-      totals 
+        outstanding_balance: Number(r.outstanding_balance)
+      })),
+      totals
     };
   },
 };
@@ -1438,12 +1458,12 @@ export const billingCancelBillReport: ReportDefinition = {
       acc.original_amount += Number(row.original_amount || 0);
       return acc;
     }, { original_amount: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
-        original_amount: Number(r.original_amount) 
-      })), 
-      totals 
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        original_amount: Number(r.original_amount)
+      })),
+      totals
     };
   },
 };
@@ -1486,13 +1506,13 @@ export const billingServiceTypeSummaryReport: ReportDefinition = {
       acc.total_billed += Number(row.total_billed || 0);
       return acc;
     }, { invoice_count: 0, total_billed: 0 });
-    return { 
-      rows: rows.map(r => ({ 
-        ...r, 
+    return {
+      rows: rows.map(r => ({
+        ...r,
         invoice_count: Number(r.invoice_count),
-        total_billed: Number(r.total_billed) 
-      })), 
-      totals 
+        total_billed: Number(r.total_billed)
+      })),
+      totals
     };
   },
 };

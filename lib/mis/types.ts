@@ -42,9 +42,42 @@ export interface ReportDefinition {
   defaultSort: { column: string; direction: 'asc' | 'desc' };
   rowLimitSync: number;                // default 5000 — above this triggers async job
   queryFn: (filters: ValidatedFilters, orgId: string) => Promise<{ rows: Record<string, unknown>[]; totals: Record<string, number> }>;
+  /**
+   * Optional fast COUNT(*) query for the async threshold check in runner.ts.
+   *
+   * ## Why this exists
+   *   `runner.ts` must decide sync vs async BEFORE running the full query.
+   *   Running the full query just to count rows defeats the purpose — for a
+   *   50,000-row report, that is an OOM-risk DB round-trip.
+   *
+   * ## When to define it
+   *   Define `countFn` only on reports whose underlying query can return
+   *   O(tens-of-thousands) rows — i.e., row-level detail reports backed by
+   *   large tables (invoice_items, pharmacy_order_items, etc.).
+   *
+   *   Aggregated/grouped reports (billing-summary, pharmacy-ip-issue, etc.)
+   *   return O(hundreds) of grouped rows at most — the runner's fallback
+   *   path (run queryFn, check rows.length) is safe and correct for these.
+   *
+   * ## When to omit it
+   *   If omitted, runner.ts executes queryFn synchronously and falls back to
+   *   checking `rows.length` against `rowLimitSync` — identical to the
+   *   previous mock-100 behaviour but now using real row counts.
+   *
+   * ## Implementation pattern
+   *   Mirror the queryFn WHERE clause exactly, but replace the SELECT with
+   *   `SELECT COUNT(*) as "count"` and remove GROUP BY / ORDER BY.
+   *   Keep all filter predicates so the count reflects the actual result set.
+   *
+   * @param filters  Validated filters (same shape as queryFn receives).
+   * @param orgId    Organisation ID for multi-tenant isolation.
+   * @returns        Estimated row count (number, not BigInt).
+   */
+  countFn?: (filters: ValidatedFilters, orgId: string) => Promise<number>;
   chartSpec?: ChartSpec;               // optional Chart.js spec for visual reports
   drillDownTo?:  string;               // report_id of the detail report for drill-down
   drillDownKey?: string;               // row field whose value is forwarded as filter param to drillDownTo
   requiredPermission: string;          // e.g. "mis_reports.billing.view"
   moduleFlag?: string;                 // e.g. "optical" — hides report if module disabled
 }
+

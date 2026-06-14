@@ -57,6 +57,13 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
     'mis_reports.billing.admin',   // doctor payouts, discounts, accounts payable
     'mis_reports.revenue.view',
     'mis_reports.finance.view',
+    'mis_reports.registration.view',
+    'mis_reports.frontdesk.view',
+    'mis_reports.admission.view',
+    'mis_reports.diagnostic.view',
+    'mis_reports.pharmacy.view',
+    'mis_reports.inventory.view',
+    'mis_reports.specialized.view'
   ],
   finance: [
     'mis_reports.billing.view',

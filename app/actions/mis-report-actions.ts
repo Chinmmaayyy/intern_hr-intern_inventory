@@ -316,7 +316,13 @@ export async function listCatalogue() {
   const grouped = accessibleReports.reduce((acc, report) => {
     if (!acc[report.category]) acc[report.category] = [];
     // Strip server-only fields before sending to the client.
-    const { queryFn, drillDownTo, chartSpec, ...clientDef } = report;
+    // queryFn and countFn are functions — they cannot cross the Server Action
+    // boundary and must never be serialised to the client.
+    // drillDownTo, drillDownKey, and chartSpec are plain serialisable values;
+    // they are intentionally kept so the Hub UI can display drill-down badges
+    // and chart previews without needing a separate round-trip.
+    // Gap #14 fix: removed drillDownTo from the destructured strip list.
+    const { queryFn, countFn, ...clientDef } = report;
     acc[report.category].push(clientDef);
     return acc;
   }, {} as Record<string, any[]>);
@@ -379,17 +385,45 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
     where: { id: jobId },
   });
 
-  if (!job || job.organizationId !== session.orgId) {
+  // Gap #9 fix: enforce BOTH multi-tenant isolation (organizationId) AND
+  // intra-org job ownership (requested_by).
+  //
+  // Without the requested_by check, any authenticated user within the same
+  // organisation could poll another user's job by knowing or guessing its UUID.
+  // The two conditions are deliberately kept as a single guard so the error
+  // message does not reveal whether the job exists at all (avoids enumeration).
+  if (
+    !job ||
+    job.organizationId !== session.orgId ||
+    job.requested_by   !== session.userId
+  ) {
     throw new Error('Job not found');
   }
 
+  // Gap #17 fix: surface expiry as a first-class status.
+  //
+  // If a Completed job's expires_at has passed, the file_key URL is no longer
+  // valid (the local file has been deleted by the cleanup cron, or the S3
+  // pre-signed URL period has lapsed). We return status 'Expired' rather than
+  // 'Completed' so ExportExcelButton can render a "Regenerate" prompt instead
+  // of a broken download link.
+  //
+  // Only Completed jobs can expire — Running/Queued/Failed jobs do not have
+  // a download file, so expires_at is irrelevant for them.
+  const isExpired =
+    job.status === 'Completed' &&
+    job.expires_at !== null &&
+    job.expires_at < new Date();
+
   return {
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+    id:          job.id,
+    status:      isExpired ? 'Expired' : job.status,
+    progress:    job.progress,
+    file_key:    isExpired ? null : job.file_key,  // do not return a dead URL
+    error:       isExpired
+                   ? 'This export has expired. Please regenerate the report.'
+                   : job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   };
 }
@@ -397,19 +431,41 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
 export async function listJobs(): Promise<JobStatusResponse[]> {
   const session = await getSession();
 
+  // Gap #9 fix: scope to the requesting user's OWN jobs only.
+  // Previously this fetched all jobs for the organisation, meaning any org
+  // member could inspect every other member's export history and file keys.
+  //
+  // Gap #17 fix: exclude expired Completed jobs from the list.
+  //   A job is expired when: status === 'Completed' AND expires_at < now.
+  //   We exclude them here with a Prisma OR filter:
+  //     Show the job if:
+  //       (a) it is NOT Completed (still Queued / Running / Failed — always
+  //           visible regardless of expires_at), OR
+  //       (b) it IS Completed AND expires_at is either null (never expires)
+  //           or still in the future.
+  //   This keeps the list clean — no stale download buttons for the user.
+  const now = new Date();
   const jobs = await prisma.reportJob.findMany({
-    where: { organizationId: session.orgId },
+    where: {
+      organizationId: session.orgId,
+      requested_by:   session.userId,
+      OR: [
+        { status: { not: 'Completed' } },                         // (a) non-terminal
+        { status: 'Completed', expires_at: null },                // (b-i) completed, no expiry
+        { status: 'Completed', expires_at: { gt: now } },         // (b-ii) completed, still fresh
+      ],
+    },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take:    20,
   });
 
   return jobs.map((job) => ({
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+    id:          job.id,
+    status:      job.status,
+    progress:    job.progress,
+    file_key:    job.file_key,
+    error:       job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   }));
 }
@@ -422,6 +478,18 @@ export async function listJobs(): Promise<JobStatusResponse[]> {
  * ## Return shape
  * Sync  → { async: false, base64: string, filename: string }
  * Async → { async: true,  jobId: string }
+ *
+ * ## Gap #11 fix — no duplicate ReportJob rows
+ *
+ * The previous implementation called `runReport()` which, on the async path,
+ * already created a `ReportJob` row (inside runner.ts) and returned
+ * `{ async: true, jobId }`. Then `exportReportToExcel` created a SECOND
+ * `ReportJob` via `prisma.reportJob.create()`, orphaning the first.
+ *
+ * The fix: when `runReport` returns `{ async: true, jobId }`, that jobId IS
+ * the queued job. We return it directly — no second `create()` call needed.
+ * The worker (app/api/mis/worker/route.ts) processes whichever job was
+ * created first; there is only ever ONE job per user action now.
  *
  * ## Access Denial
  * Called from a Client Component button — ExportExcelButton already handles
@@ -441,6 +509,8 @@ export async function exportReportToExcel(
   }
 
   // 2. Run the report — assertReportAccess fires inside runReport.
+  //    For large reports, runReport creates the ReportJob internally and
+  //    returns { async: true, jobId }. We must NOT create another job.
   let result: GenerateReportResponse;
   try {
     result = await runReport(
@@ -460,25 +530,16 @@ export async function exportReportToExcel(
     throw new Error(error.message ?? 'Failed to export report.');
   }
 
-  // 3. Large report — queue a background Excel job and return jobId.
-  //    ExportExcelButton enters its 'polling' state and calls getJobStatus()
-  //    every 2 s until job.status === 'Completed'.
+  // 3. Large report — runner already queued a background Excel job.
+  //    Gap #11 fix: return the jobId that runner created. No second
+  //    prisma.reportJob.create() here — that was the source of the duplicate.
   if (result.async) {
-    // Prisma field names are exact — verified against schema.prisma in Phase 1.
-    const job = await prisma.reportJob.create({
-      data: {
-        report_id: reportId,
-        filters_json: (filters ?? {}) as any,
-        requested_by: session.userId,
-        organizationId: session.orgId,
-        format: 'Excel',
-        status: 'Queued',
-      },
-    });
-    return { async: true, jobId: job.id };
+    // result.jobId is guaranteed to exist when result.async === true
+    // (see runner.ts — it always sets jobId when creating the ReportJob).
+    return { async: true, jobId: result.jobId! };
   }
 
-  // 4. Generate the Excel buffer.
+  // 4. Generate the Excel buffer (sync path — data is already in memory).
   const buffer = await generateExcelBuffer(
     reportDef.columns,
     result.rows ?? [],
@@ -487,12 +548,12 @@ export async function exportReportToExcel(
 
   // 5. Build a safe, date-stamped filename.
   const dateSuffix = new Date().toISOString().split('T')[0];
-  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
+  const safeName   = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
 
   // 6. Return Base64 — safe for Server Action serialisation.
   return {
-    async: false,
-    base64: buffer.toString('base64'),
+    async:    false,
+    base64:   buffer.toString('base64'),
     filename: `${safeName}_${dateSuffix}.xlsx`,
   };
 }
@@ -500,12 +561,22 @@ export async function exportReportToExcel(
 // ─── Report Columns (for Drill-Down) ─────────────────────────────────────────
 
 /**
- * Returns only the safe, serialisable column spec and display name for a
- * given report. Used by `UniversalReportShell` to render the `DrillDownPanel`
- * without requiring a second full `generateReport` just for schema discovery.
+ * Returns the serialisable column spec and display name for a given report.
+ * Used by `UniversalReportShell` to render the `DrillDownPanel` table headers
+ * without requiring a second full `generateReport` call.
  *
- * Does NOT enforce RBAC — column metadata is not sensitive. The actual data
- * fetch (via `generateReport`) enforces access.
+ * ## RBAC (Gap #18 fix)
+ * This function now enforces RBAC. Although column *names* are not data,
+ * leaking the existence of admin-only report schemas (e.g. a `doctor_payout`
+ * column on a report the caller cannot access) is an information-disclosure
+ * vulnerability per PRD §4.
+ *
+ * If the caller's role does not include the report's `requiredPermission`,
+ * this action throws so the DrillDownPanel can catch and render an
+ * inline access-denied message — consistent with how generateReport() works.
+ *
+ * The actual *data* fetch (via `generateReport`) enforces RBAC independently,
+ * so this is a defence-in-depth addition, not a primary gate.
  */
 export async function getReportColumns(
   reportId: string
@@ -514,5 +585,12 @@ export async function getReportColumns(
   if (!reportDef) {
     throw new Error(`Report "${reportId}" not found in registry.`);
   }
+
+  // Gap #18 fix: enforce permission check before returning column metadata.
+  const session = await getSession();
+  const { assertReportAccess } = await import('@/lib/mis/rbac');
+  assertReportAccess(reportDef.requiredPermission, session.permissions);
+
+
   return { columns: reportDef.columns, name: reportDef.name };
 }

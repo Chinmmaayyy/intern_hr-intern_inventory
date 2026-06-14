@@ -40,7 +40,7 @@
  */
 
 import React, { useCallback, useRef, useState } from 'react';
-import { exportReportToExcel, getJobStatus } from '@/app/actions/mis-report-actions';
+import { exportReportToExcel } from '@/app/actions/mis-report-actions';
 import { Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,9 +152,16 @@ export function ExportExcelButton({
     }, []);
 
     /**
-     * Polls getJobStatus(jobId) every POLL_INTERVAL_MS until the job reaches
-     * a terminal state ('Completed' or 'Failed'), then either opens the
-     * file_key URL in a new tab (success) or surfaces an error.
+     * Polls GET /api/mis/jobs/[jobId] every POLL_INTERVAL_MS until the job
+     * reaches a terminal state, then either opens the download proxy URL in a
+     * new tab (success) or surfaces an error.
+     *
+     * ## Why a REST endpoint, not getJobStatus() Server Action
+     * getJobStatus is a `'use server'` function. Calling it from the browser
+     * triggers Next.js 15's full-route RSC cache invalidation, causing page.tsx
+     * to re-execute generateReport() and create a new DB job on every poll tick.
+     * Using a plain Route Handler (app/api/mis/jobs/[jobId]/route.ts) has zero
+     * interaction with the router cache.
      *
      * Uses `pollAbortRef` to cleanly stop if the component unmounts mid-poll.
      */
@@ -169,35 +176,49 @@ export function ExportExcelButton({
             await tick();
             attempts++;
 
-            let job;
+            let jobData: { status: string; error?: string | null } | null = null;
             try {
-                job = await getJobStatus(jobId);
+                // REST Route Handler — does NOT invalidate the RSC cache.
+                const res = await fetch(`/api/mis/jobs/${jobId}`, {
+                    cache:   'no-store',
+                    headers: { Accept: 'application/json' },
+                });
+                if (res.ok) {
+                    jobData = await res.json();
+                } else if (res.status === 404) {
+                    // Job vanished — treat as failure rather than retrying forever.
+                    setState('error');
+                    setErrorMsg('Export job not found. Please try again.');
+                    scheduleReset(4000);
+                    return;
+                }
+                // Other non-ok statuses (5xx) → keep polling (transient error)
             } catch {
                 // Network / server error — keep polling rather than giving up
                 // immediately; transient blips are common during large jobs.
                 continue;
             }
 
-            if (job.status === 'Completed') {
-                if (job.file_key) {
-                    // Open the download URL in a new tab. Q2 (plan) noted this
-                    // as option (a) — direct file_key URL. Replace with a
-                    // pre-signed URL route when the S3 integration is finalised.
-                    window.open(job.file_key, '_blank', 'noopener,noreferrer');
-                }
+            if (!jobData) continue;
+
+            if (jobData.status === 'Completed') {
+                // Route through the secure download proxy rather than opening
+                // file_key directly. This works for both local and S3 modes,
+                // and surfaces an error if the file is unavailable.
+                window.open(`/api/mis/export/${jobId}`, '_blank', 'noopener,noreferrer');
                 setState('success');
                 scheduleReset(2500);
                 return;
             }
 
-            if (job.status === 'Failed') {
+            if (jobData.status === 'Failed') {
                 setState('error');
-                setErrorMsg(job.error ?? 'Export job failed. Please try again.');
+                setErrorMsg(jobData.error ?? 'Export job failed. Please try again.');
                 scheduleReset(4000);
                 return;
             }
 
-            // Any other status ('Queued', 'Processing', 'Running') → keep polling
+            // Any other status ('Queued', 'Running') → keep polling
         }
 
         // Timeout guard — POLL_MAX_ATTEMPTS exhausted without a terminal status
