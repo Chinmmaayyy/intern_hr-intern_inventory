@@ -128,10 +128,14 @@ export default async function DynamicReportPage({ params, searchParams }: PagePr
         // GenerateReportResponse is a superset of UniversalPayload (it also
         // includes `meta`). We pick only the fields UniversalReportShell needs.
         payload = {
-            async: result.async,
-            jobId: result.jobId,
-            rows: result.rows,
+            async:  result.async,
+            jobId:  result.jobId,
+            rows:   result.rows,
             totals: result.totals,
+            // Forward the error flag so AccessDeniedState renders correctly.
+            // Without this line, { error: 'UNAUTHORIZED' } from generateReport()
+            // is silently dropped and the shell falls through to EmptyState.
+            error:  result.error,
         };
     } catch (err: unknown) {
         // This catches both "report not found" (belt-and-suspenders) and any
@@ -145,7 +149,8 @@ export default async function DynamicReportPage({ params, searchParams }: PagePr
     // `columns` is ColumnSpec[] — all primitive values, safe to pass to a
     // Client Component without any stripping.
     // `reportDef.filters` (ZodSchema) is intentionally NOT passed.
-    const { name: reportName, columns } = reportDef;
+    // `drillDownTo` / `drillDownKey` are optional strings — safe to pass.
+    const { name: reportName, columns, drillDownTo, drillDownKey } = reportDef;
 
     return (
         <AdminPage
@@ -162,6 +167,8 @@ export default async function DynamicReportPage({ params, searchParams }: PagePr
                     reportName={reportName}
                     columns={columns}
                     payload={payload!}
+                    drillDownTo={drillDownTo}
+                    drillDownKey={drillDownKey}
                 />
             </Suspense>
         </AdminPage>

@@ -24,7 +24,7 @@ export function DynamicReportViewer({ reportId, reportDescription, columns }: Dy
     date_start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     date_end: new Date().toISOString().split('T')[0]
   });
-  
+
   const [data, setData] = useState<{ rows: any[], totals: any } | null>(null);
   const [loading, setLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -55,19 +55,35 @@ export function DynamicReportViewer({ reportId, reportDescription, columns }: Dy
     setIsExporting(true);
     try {
       const result = await exportReportToExcel(reportId, filters);
-      const binaryString = window.atob(result.base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+
+      // 1. Handle the Background Job Scenario
+      if ('async' in result && result.async) {
+        setIsQueued(true);
+        // Cast as any to bypass strict union checks for jobId
+        setJobId((result as any).jobId || '');
+        return;
       }
-      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = result.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+
+      // 2. Handle the Instant Download Scenario
+      // Explicitly checking properties forces TypeScript to accept them
+      if ('base64' in result && 'filename' in result) {
+        const base64Data = result.base64 as string;
+        const fileName = result.filename as string;
+
+        const binaryString = window.atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (error: any) {
       alert(error.message || "Export failed");
     } finally {
@@ -89,38 +105,38 @@ export function DynamicReportViewer({ reportId, reportDescription, columns }: Dy
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="bg-gray-50/50 rounded-2xl border border-gray-200 p-5">
         {reportDescription && <p className="text-sm text-gray-500 font-medium mb-5">{reportDescription}</p>}
-        
+
         <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Start Date</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               required
-              value={filters.date_start} 
-              onChange={e => setFilters(f => ({...f, date_start: e.target.value}))}
+              value={filters.date_start}
+              onChange={e => setFilters(f => ({ ...f, date_start: e.target.value }))}
               className="bg-white border border-gray-200 text-sm font-semibold text-gray-900 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm w-44"
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">End Date</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               required
-              value={filters.date_end} 
-              onChange={e => setFilters(f => ({...f, date_end: e.target.value}))}
+              value={filters.date_end}
+              onChange={e => setFilters(f => ({ ...f, date_end: e.target.value }))}
               className="bg-white border border-gray-200 text-sm font-semibold text-gray-900 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm w-44"
             />
           </div>
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-6 py-2.5 rounded-xl transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed ml-auto"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Generate
           </button>
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={handleExport}
             disabled={isExporting || loading || isQueued}
             className="flex items-center gap-2 bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 font-bold text-sm px-6 py-2.5 rounded-xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -187,7 +203,7 @@ export function DynamicReportViewer({ reportId, reportDescription, columns }: Dy
                         const isTotalCol = col.key in data.totals;
                         const rawVal = data.totals[col.key];
                         const valString = (rawVal !== undefined && rawVal !== null) ? formatValue(rawVal, col.type) : '';
-                        
+
                         return (
                           <td key={col.key} className={`px-6 py-4 font-black text-indigo-900 ${col.type === 'currency' || col.type === 'number' ? 'text-right' : ''}`}>
                             {i === 0 ? 'TOTALS' : isTotalCol ? valString : ''}

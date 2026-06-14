@@ -2,9 +2,32 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use server';
 
+/**
+ * app/actions/mis-report-actions.ts
+ * ----------------------------------
+ * All MIS-module Server Actions live here.
+ *
+ * ## RBAC contract (per directive)
+ *   - `generateReport` NEVER throws an unhandled error for access denial.
+ *     On `MISAccessDeniedError` it returns a safe object so the calling
+ *     Server Component can pass it to `UniversalReportShell` which then
+ *     renders the polite <AccessDeniedState> UI.
+ *   - `exportReportToExcel` is called from a Client Component button; on
+ *     access denial it throws a user-friendly string so ExportExcelButton
+ *     can display its `error` state.
+ *   - `listCatalogue` already filtered by `requiredPermission`; RBAC is now
+ *     enforced end-to-end because `runReport` calls `assertReportAccess`.
+ *
+ * ## Session note
+ *   `getSession()` is a mock that reads the first User from the DB and derives
+ *   MIS permissions from `User.role` via `getMISPermissions()`. Once a real
+ *   auth provider (NextAuth, JWT, etc.) is wired, replace `getSession` only —
+ *   no other function in this file needs to change.
+ */
+
 import { prisma } from '@/backend/db';
 import { runReport, REGISTRY } from '@/lib/mis/runner';
-import { 
+import {
   dailyRevenueReport,
   billingDetailReport,
   billingItemDetailReport,
@@ -132,24 +155,44 @@ import {
   opticalPaymentReport
 } from '@/lib/mis/registry/specialized';
 import { generateExcelBuffer } from '@/lib/mis/exporter';
-import { GenerateReportResponse, JobStatusResponse } from '@/lib/mis/action-types';
+import { GenerateReportResponse, JobStatusResponse, ExportExcelResponse } from '@/lib/mis/action-types';
+import { getMISPermissions, MISAccessDeniedError } from '@/lib/mis/rbac';
+import type { ColumnSpec } from '@/lib/mis/types';
+
+// ─── Session ──────────────────────────────────────────────────────────────────
+
+/**
+ * Mock session resolver.
+ *
+ * Reads the first User from the DB and derives MIS permissions from their
+ * `User.role` string via `getMISPermissions()`.
+ *
+ * IMPORTANT: Replace this function's body with a real auth lookup (NextAuth
+ * `getServerSession`, JWT decode, etc.) before production. The public API of
+ * `getSession()` must remain unchanged — callers only use `orgId`, `userId`,
+ * and `permissions`.
+ */
+import { getSession as getRealSession } from '@/app/lib/session';
 
 async function getSession() {
-  const user = await prisma.user.findFirst({
-    select: { id: true, organizationId: true }
-  });
-  if (!user) throw new Error("No users found in database for mock session");
+  const session = await getRealSession();
+  
+  if (!session) {
+    throw new Error('UNAUTHORIZED');
+  }
+
   return {
-    orgId: user.organizationId,
-    userId: user.id,
-    permissions: ['mis_reports.billing.view', 'mis_reports.revenue.view', 'mis_reports.registration.view', 'mis_reports.frontdesk.view', 'mis_reports.admission.view', 'mis_reports.diagnostic.view', 'mis_reports.pharmacy.view', 'mis_reports.inventory.view', 'mis_reports.specialized.view'],
+    orgId: session.organization_id,
+    userId: session.id,
+    permissions: getMISPermissions(session.role),
   };
 }
 
+// ─── Catalogue ────────────────────────────────────────────────────────────────
+
 export async function listCatalogue() {
   const session = await getSession();
-  
-  // Hardcoded for now, you would iterate over REGISTRY
+
   const allReports = [
     billingDetailReport,
     billingItemDetailReport,
@@ -264,16 +307,22 @@ export async function listCatalogue() {
     opticalDailySettlementSumReport,
     opticalPaymentReport
   ];
-  
-  const accessibleReports = allReports.filter(r => 
+
+  // Only surface reports the session's role can actually run.
+  const accessibleReports = allReports.filter((r) =>
     session.permissions.includes(r.requiredPermission)
   );
 
   const grouped = accessibleReports.reduce((acc, report) => {
     if (!acc[report.category]) acc[report.category] = [];
-    
-    // We omit queryFn and other server secrets when sending to client
-    const { queryFn, drillDownTo, chartSpec, ...clientDef } = report;
+    // Strip server-only fields before sending to the client.
+    // queryFn and countFn are functions — they cannot cross the Server Action
+    // boundary and must never be serialised to the client.
+    // drillDownTo, drillDownKey, and chartSpec are plain serialisable values;
+    // they are intentionally kept so the Hub UI can display drill-down badges
+    // and chart previews without needing a separate round-trip.
+    // Gap #14 fix: removed drillDownTo from the destructured strip list.
+    const { queryFn, countFn, ...clientDef } = report;
     acc[report.category].push(clientDef);
     return acc;
   }, {} as Record<string, any[]>);
@@ -281,12 +330,30 @@ export async function listCatalogue() {
   return grouped;
 }
 
+// ─── Generate Report ──────────────────────────────────────────────────────────
+
+/**
+ * Runs a report and returns a `GenerateReportResponse`.
+ *
+ * ## Access Denied — safe return instead of throw
+ * Per directive: this action MUST NOT throw an unhandled error on access
+ * denial. Doing so would cause Next.js to crash to the error boundary from the
+ * Server Component page. Instead, on `MISAccessDeniedError` we return:
+ *
+ *   { async: false, error: 'UNAUTHORIZED' }
+ *
+ * `UniversalReportShell` checks for `payload.error === 'UNAUTHORIZED'` and
+ * renders the polite <AccessDeniedState> UI.
+ *
+ * All other unexpected errors are still re-thrown so the error boundary
+ * (or a wrapping try/catch in page.tsx) can handle them.
+ */
 export async function generateReport(
-  reportId: string, 
+  reportId: string,
   filters: unknown
 ): Promise<GenerateReportResponse> {
   const session = await getSession();
-  
+
   try {
     const result = await runReport(
       reportId,
@@ -297,104 +364,233 @@ export async function generateReport(
     );
     return result;
   } catch (error: any) {
-    throw new Error(error.message || 'Failed to generate report');
+    // ── Safe path: access denial → return, not throw ──────────────────────
+    if (error?.code === 'MIS_ACCESS_DENIED') {
+      return {
+        async: false,
+        error: 'UNAUTHORIZED',
+      };
+    }
+    // ── All other errors: re-throw for Next.js error boundary ─────────────
+    throw new Error(error.message ?? 'Failed to generate report');
   }
 }
 
+// ─── Job Status ───────────────────────────────────────────────────────────────
+
 export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   const session = await getSession();
-  
+
   const job = await prisma.reportJob.findUnique({
     where: { id: jobId },
   });
 
-  if (!job || job.organizationId !== session.orgId) {
+  // Gap #9 fix: enforce BOTH multi-tenant isolation (organizationId) AND
+  // intra-org job ownership (requested_by).
+  //
+  // Without the requested_by check, any authenticated user within the same
+  // organisation could poll another user's job by knowing or guessing its UUID.
+  // The two conditions are deliberately kept as a single guard so the error
+  // message does not reveal whether the job exists at all (avoids enumeration).
+  if (
+    !job ||
+    job.organizationId !== session.orgId ||
+    job.requested_by   !== session.userId
+  ) {
     throw new Error('Job not found');
   }
 
+  // Gap #17 fix: surface expiry as a first-class status.
+  //
+  // If a Completed job's expires_at has passed, the file_key URL is no longer
+  // valid (the local file has been deleted by the cleanup cron, or the S3
+  // pre-signed URL period has lapsed). We return status 'Expired' rather than
+  // 'Completed' so ExportExcelButton can render a "Regenerate" prompt instead
+  // of a broken download link.
+  //
+  // Only Completed jobs can expire — Running/Queued/Failed jobs do not have
+  // a download file, so expires_at is irrelevant for them.
+  const isExpired =
+    job.status === 'Completed' &&
+    job.expires_at !== null &&
+    job.expires_at < new Date();
+
   return {
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+    id:          job.id,
+    status:      isExpired ? 'Expired' : job.status,
+    progress:    job.progress,
+    file_key:    isExpired ? null : job.file_key,  // do not return a dead URL
+    error:       isExpired
+                   ? 'This export has expired. Please regenerate the report.'
+                   : job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   };
 }
 
 export async function listJobs(): Promise<JobStatusResponse[]> {
   const session = await getSession();
-  
+
+  // Gap #9 fix: scope to the requesting user's OWN jobs only.
+  // Previously this fetched all jobs for the organisation, meaning any org
+  // member could inspect every other member's export history and file keys.
+  //
+  // Gap #17 fix: exclude expired Completed jobs from the list.
+  //   A job is expired when: status === 'Completed' AND expires_at < now.
+  //   We exclude them here with a Prisma OR filter:
+  //     Show the job if:
+  //       (a) it is NOT Completed (still Queued / Running / Failed — always
+  //           visible regardless of expires_at), OR
+  //       (b) it IS Completed AND expires_at is either null (never expires)
+  //           or still in the future.
+  //   This keeps the list clean — no stale download buttons for the user.
+  const now = new Date();
   const jobs = await prisma.reportJob.findMany({
-    where: { organizationId: session.orgId },
+    where: {
+      organizationId: session.orgId,
+      requested_by:   session.userId,
+      OR: [
+        { status: { not: 'Completed' } },                         // (a) non-terminal
+        { status: 'Completed', expires_at: null },                // (b-i) completed, no expiry
+        { status: 'Completed', expires_at: { gt: now } },         // (b-ii) completed, still fresh
+      ],
+    },
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take:    20,
   });
 
-  return jobs.map(job => ({
-    id: job.id,
-    status: job.status,
-    progress: job.progress,
-    file_key: job.file_key,
-    error: job.error,
-    createdAt: job.createdAt,
+  return jobs.map((job) => ({
+    id:          job.id,
+    status:      job.status,
+    progress:    job.progress,
+    file_key:    job.file_key,
+    error:       job.error,
+    createdAt:   job.createdAt,
     finished_at: job.finished_at,
   }));
 }
 
-// ─── Excel Export ─────────────────────────────────────────────────────────────
-
-export interface ExportExcelResponse {
-  /** Base64-encoded .xlsx file contents */
-  base64: string;
-  /** Suggested filename for the download */
-  filename: string;
-}
-
+/**
+ * Runs a report and returns the result as a Base64-encoded Excel file
+ * (sync path) or queues a background job (async path) for the
+ * ExportExcelButton to poll via getJobStatus().
+ *
+ * ## Return shape
+ * Sync  → { async: false, base64: string, filename: string }
+ * Async → { async: true,  jobId: string }
+ *
+ * ## Gap #11 fix — no duplicate ReportJob rows
+ *
+ * The previous implementation called `runReport()` which, on the async path,
+ * already created a `ReportJob` row (inside runner.ts) and returned
+ * `{ async: true, jobId }`. Then `exportReportToExcel` created a SECOND
+ * `ReportJob` via `prisma.reportJob.create()`, orphaning the first.
+ *
+ * The fix: when `runReport` returns `{ async: true, jobId }`, that jobId IS
+ * the queued job. We return it directly — no second `create()` call needed.
+ * The worker (app/api/mis/worker/route.ts) processes whichever job was
+ * created first; there is only ever ONE job per user action now.
+ *
+ * ## Access Denial
+ * Called from a Client Component button — ExportExcelButton already handles
+ * thrown errors by transitioning to its `error` state and showing the message.
+ * So we throw a user-friendly string here (safe for that context).
+ */
 export async function exportReportToExcel(
   reportId: string,
   filters: unknown
 ): Promise<ExportExcelResponse> {
   const session = await getSession();
 
-  // 1. Look up column definitions from the registry
+  // 1. Look up column definitions from the registry.
   const reportDef = REGISTRY[reportId];
   if (!reportDef) {
-    throw new Error(`Report ${reportId} not found in registry`);
+    throw new Error(`Report "${reportId}" not found in registry.`);
   }
 
-  // 2. Run the report (reuses the same runner as generateReport)
-  const result = await runReport(
-    reportId,
-    filters,
-    session.orgId,
-    session.userId,
-    session.permissions
-  );
-
-  // 3. Async exports are not supported yet
-  if (result.async) {
-    throw new Error(
-      'This report is too large for instant export. Async Excel exports will be supported soon.'
+  // 2. Run the report — assertReportAccess fires inside runReport.
+  //    For large reports, runReport creates the ReportJob internally and
+  //    returns { async: true, jobId }. We must NOT create another job.
+  let result: GenerateReportResponse;
+  try {
+    result = await runReport(
+      reportId,
+      filters,
+      session.orgId,
+      session.userId,
+      session.permissions
     );
+  } catch (error: any) {
+    if (error?.code === 'MIS_ACCESS_DENIED') {
+      // Throw a user-readable message — ExportExcelButton shows it in-line.
+      throw new Error(
+        'You do not have permission to export this report. Contact your administrator.'
+      );
+    }
+    throw new Error(error.message ?? 'Failed to export report.');
   }
 
-  // 4. Generate the Excel buffer
+  // 3. Large report — runner already queued a background Excel job.
+  //    Gap #11 fix: return the jobId that runner created. No second
+  //    prisma.reportJob.create() here — that was the source of the duplicate.
+  if (result.async) {
+    // result.jobId is guaranteed to exist when result.async === true
+    // (see runner.ts — it always sets jobId when creating the ReportJob).
+    return { async: true, jobId: result.jobId! };
+  }
+
+  // 4. Generate the Excel buffer (sync path — data is already in memory).
   const buffer = await generateExcelBuffer(
     reportDef.columns,
     result.rows ?? [],
     result.totals ?? {}
   );
 
-  // 5. Build a safe filename: "Daily_Revenue_by_Doctor_Department_2026-06-12.xlsx"
+  // 5. Build a safe, date-stamped filename.
   const dateSuffix = new Date().toISOString().split('T')[0];
-  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
-  const filename = `${safeName}_${dateSuffix}.xlsx`;
+  const safeName   = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
 
-  // 6. Return Base64 — safe for Server Action serialization
+  // 6. Return Base64 — safe for Server Action serialisation.
   return {
-    base64: buffer.toString('base64'),
-    filename,
+    async:    false,
+    base64:   buffer.toString('base64'),
+    filename: `${safeName}_${dateSuffix}.xlsx`,
   };
+}
+
+// ─── Report Columns (for Drill-Down) ─────────────────────────────────────────
+
+/**
+ * Returns the serialisable column spec and display name for a given report.
+ * Used by `UniversalReportShell` to render the `DrillDownPanel` table headers
+ * without requiring a second full `generateReport` call.
+ *
+ * ## RBAC (Gap #18 fix)
+ * This function now enforces RBAC. Although column *names* are not data,
+ * leaking the existence of admin-only report schemas (e.g. a `doctor_payout`
+ * column on a report the caller cannot access) is an information-disclosure
+ * vulnerability per PRD §4.
+ *
+ * If the caller's role does not include the report's `requiredPermission`,
+ * this action throws so the DrillDownPanel can catch and render an
+ * inline access-denied message — consistent with how generateReport() works.
+ *
+ * The actual *data* fetch (via `generateReport`) enforces RBAC independently,
+ * so this is a defence-in-depth addition, not a primary gate.
+ */
+export async function getReportColumns(
+  reportId: string
+): Promise<{ columns: ColumnSpec[]; name: string }> {
+  const reportDef = REGISTRY[reportId];
+  if (!reportDef) {
+    throw new Error(`Report "${reportId}" not found in registry.`);
+  }
+
+  // Gap #18 fix: enforce permission check before returning column metadata.
+  const session = await getSession();
+  const { assertReportAccess } = await import('@/lib/mis/rbac');
+  assertReportAccess(reportDef.requiredPermission, session.permissions);
+
+
+  return { columns: reportDef.columns, name: reportDef.name };
 }

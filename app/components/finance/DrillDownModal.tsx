@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Loader2, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, Loader2 } from 'lucide-react';
 import { getDrillDownData, DrillDownType } from '@/app/actions/finance-actions';
 import Link from 'next/link';
 
@@ -34,17 +34,7 @@ export function DrillDownModal({ type, filters, onClose }: DrillDownModalProps) 
         return () => document.removeEventListener('keydown', handler);
     }, [onClose]);
 
-    const exportCsv = () => {
-        if (!data) return;
-        const rowKeys = data.rows[0] ? Object.keys(data.rows[0]).filter(k => k !== 'invoiceId') : [];
-        const headers = data.columns.join(',');
-        const rows = data.rows.map(r => rowKeys.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(','));
-        const csv = [headers, ...rows].join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${type}-drilldown.csv`; a.click();
-        URL.revokeObjectURL(url);
-    };
+
 
     return (
         <div className="fixed inset-0 z-50 flex justify-end">
@@ -54,15 +44,8 @@ export function DrillDownModal({ type, filters, onClose }: DrillDownModalProps) 
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
                     <h2 className="text-base font-black text-gray-900">{data?.title || 'Loading...'}</h2>
                     <div className="flex items-center gap-2">
-                        {data && data.rows.length > 0 && (
-                            <button onClick={exportCsv}
-                                className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition">
-                                Export CSV
-                            </button>
-                        )}
-                        <button onClick={onClose}
-                            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">
-                            <X className="h-4 w-4" />
+                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">
+                            <X className="h-5 w-5" />
                         </button>
                     </div>
                 </div>

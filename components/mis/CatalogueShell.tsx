@@ -45,6 +45,12 @@ export interface CatalogueShellProps {
     catalogue: Record<string, CatalogueEntry[]>;
     /** Total number of reports across all categories. */
     totalCount: number;
+    /**
+     * Base path prefix for report links.
+     * Defaults to '/admin/mis' — override for operational portals
+     * (e.g. '/finance/mis', '/doctor/mis').
+     */
+    basePath?: string;
 }
 
 // ─── Category metadata ────────────────────────────────────────────────────────
@@ -195,7 +201,7 @@ const ACCENT_STYLES: Record<AccentKey, {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
+export function CatalogueShell({ catalogue, totalCount, basePath = '/admin/mis' }: CatalogueShellProps) {
     const [query, setQuery] = useState('');
 
     /**
@@ -279,6 +285,7 @@ export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
                                 category="Daily Revenue"
                                 reports={filteredCategories.find(([cat]) => cat === 'Daily Revenue')![1]}
                                 isSearching={isSearching}
+                                basePath={basePath}
                             />
                         </div>
                     )}
@@ -293,6 +300,7 @@ export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
                                         category={category}
                                         reports={reports}
                                         isSearching={isSearching}
+                                        basePath={basePath}
                                     />
                                 </div>
                             ))}
@@ -311,9 +319,10 @@ interface CategoryCardProps {
     category:    string;
     reports:     CatalogueEntry[];
     isSearching: boolean;
+    basePath:    string;
 }
 
-function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
+function CategoryCard({ category, reports, isSearching, basePath }: CategoryCardProps) {
     const meta   = CATEGORY_META[category] ?? FALLBACK_META;
     const styles = ACCENT_STYLES[meta.accent];
     const Icon   = meta.icon;
@@ -364,6 +373,7 @@ function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
                         report={report}
                         styles={styles}
                         isSearching={isSearching}
+                        basePath={basePath}
                     />
                 ))}
             </ul>
@@ -377,43 +387,54 @@ interface ReportRowProps {
     report:      CatalogueEntry;
     styles:      typeof ACCENT_STYLES[AccentKey];
     isSearching: boolean;
+    basePath:    string;
 }
 
-function ReportRow({ report, styles }: ReportRowProps) {
+function ReportRow({ report, styles, basePath }: ReportRowProps) {
     return (
         <li>
             <Link
-                href={`/admin/mis/${report.id}`}
+                href={report.moduleFlag ? '#' : `${basePath}/${report.id}`}
                 className={`
                     group flex items-start gap-3 px-5 py-3.5
                     transition-colors duration-100
                     focus-visible:outline-none
                     focus-visible:ring-2 focus-visible:ring-inset
-                    ${styles.ring} ${styles.rowHover}
+                    ${report.moduleFlag ? 'opacity-60 cursor-not-allowed bg-gray-50/50' : `${styles.ring} ${styles.rowHover}`}
                 `}
+                onClick={(e) => report.moduleFlag && e.preventDefault()}
                 prefetch={false}
             >
                 {/* Report text */}
-                <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-bold text-stone-900 leading-snug truncate group-hover:underline underline-offset-2">
-                        {report.name}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-gray-400 font-medium leading-relaxed line-clamp-2">
-                        {report.description}
-                    </p>
+                <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <p className={`text-[13px] font-bold text-stone-900 leading-snug truncate ${report.moduleFlag ? '' : 'group-hover:underline'} underline-offset-2`}>
+                            {report.name}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-gray-400 font-medium leading-relaxed line-clamp-2">
+                            {report.description}
+                        </p>
+                    </div>
+                    {report.moduleFlag && (
+                        <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-200 text-gray-600 select-none">
+                            {report.moduleFlag}
+                        </span>
+                    )}
                 </div>
 
                 {/* Arrow — slides in on hover */}
-                <ArrowRight
-                    className={`
-                        h-3.5 w-3.5 shrink-0 mt-0.5
-                        ${styles.rowArrow}
-                        opacity-0 -translate-x-1
-                        group-hover:opacity-100 group-hover:translate-x-0
-                        transition-all duration-150
-                    `}
-                    aria-hidden="true"
-                />
+                {!report.moduleFlag && (
+                    <ArrowRight
+                        className={`
+                            h-3.5 w-3.5 shrink-0 mt-0.5
+                            ${styles.rowArrow}
+                            opacity-0 -translate-x-1
+                            group-hover:opacity-100 group-hover:translate-x-0
+                            transition-all duration-150
+                        `}
+                        aria-hidden="true"
+                    />
+                )}
             </Link>
         </li>
     );
