@@ -15,6 +15,12 @@ export default function IndentsListPage() {
   const [allItems, setAllItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const QUICK_FILTERS = [
+    { label: 'All', value: '' },
+    { label: 'Pending Issues', value: 'Approved' },
+    { label: 'Pending Receipts', value: 'In Transit' },
+    { label: 'Submitted', value: 'Submitted' },
+  ];
 
   // View Details Modal
   const [selectedIndent, setSelectedIndent] = useState<any>(null);
@@ -255,7 +261,23 @@ export default function IndentsListPage() {
           <span className="text-sm text-gray-500">Total indents found: {indents.length}</span>
         </div>
 
-        <div className="flex w-full md:w-auto items-center gap-4">
+        <div className="flex w-full md:w-auto items-center gap-4 flex-wrap">
+          <div className="flex gap-2 flex-wrap">
+            {QUICK_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setStatusFilter(f.value)}
+                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition ${
+                  statusFilter === f.value
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -265,6 +287,7 @@ export default function IndentsListPage() {
             <option value="Draft">Draft</option>
             <option value="Submitted">Submitted</option>
             <option value="Approved">Approved</option>
+            <option value="In Transit">In Transit</option>
             <option value="Partially Issued">Partially Issued</option>
             <option value="Completed">Completed</option>
             <option value="Cancelled">Cancelled</option>
@@ -548,7 +571,7 @@ export default function IndentsListPage() {
                   disabled={receiving}
                   className="bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm px-4 py-2 rounded-lg transition disabled:opacity-50"
                 >
-                  {receiving ? 'Confirming...' : 'Confirm Receipt (Inter-branch)'}
+                  {receiving ? 'Confirming...' : 'Confirm Receipt'}
                 </button>
               </div>
             )}

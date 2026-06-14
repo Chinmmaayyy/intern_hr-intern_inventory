@@ -99,8 +99,9 @@ async function main() {
     // Find a branch if available
     const branch = await prisma.branch.findFirst({ where: { organizationId: orgId } });
     const branchId = branch ? branch.id : null;
-    const incharge = await prisma.user.findFirst({ where: { organizationId: orgId, role: 'store_manager' } }) || 
-                     await prisma.user.findFirst({ where: { organizationId: orgId, role: 'admin' } });
+    const incharge = await prisma.user.findFirst({ where: { username: 'store1', organizationId: orgId } })
+                     || await prisma.user.findFirst({ where: { organizationId: orgId, role: 'store_manager' } })
+                     || await prisma.user.findFirst({ where: { organizationId: orgId, role: 'admin' } });
 
     const storesData = [
         { store_code: 'CENTRAL', name: 'Central Warehouse & Store', store_type: 'CENTRAL', cost_center: 'CC-CENTRAL' },
@@ -463,6 +464,60 @@ async function main() {
         }
     });
     console.log(`Seeded sample internal indent: ${indent.indent_number}`);
+
+    // 12. Test patient + active IPD admission for consumption / billing workflow
+    const testPatientId = 'PAT-INVENTORY-E2E';
+    await prisma.oPD_REG.upsert({
+        where: { patient_id: testPatientId },
+        update: { full_name: 'Inventory E2E Test Patient', organizationId: orgId },
+        create: {
+            patient_id: testPatientId,
+            full_name: 'Inventory E2E Test Patient',
+            age: '52',
+            gender: 'Female',
+            phone: '9800012345',
+            address: 'Ward A — Axten Hospitals',
+            blood_group: 'B+',
+            registration_consent: true,
+            patient_type: 'cash',
+            organizationId: orgId,
+        },
+    });
+    const testAdmissionId = 'adm-inventory-e2e';
+    const admission = await prisma.admissions.upsert({
+        where: { admission_id: testAdmissionId },
+        update: { status: 'Admitted', organizationId: orgId },
+        create: {
+            admission_id: testAdmissionId,
+            patient_id: testPatientId,
+            status: 'Admitted',
+            diagnosis: 'Post-operative monitoring',
+            admission_category: 'Planned',
+            admission_source: 'OPD',
+            patient_class: 'General',
+            billing_category: 'General',
+            organizationId: orgId,
+        },
+    });
+    await prisma.invoices.upsert({
+        where: { invoice_number: 'IPD-INVENTORY-E2E' },
+        update: { admission_id: testAdmissionId, status: 'Draft' },
+        create: {
+            invoice_number: 'IPD-INVENTORY-E2E',
+            patient_id: testPatientId,
+            admission_id: testAdmissionId,
+            invoice_type: 'IPD',
+            total_amount: 0,
+            net_amount: 0,
+            balance_due: 0,
+            paid_amount: 0,
+            status: 'Draft',
+            billing_patient_type: 'cash',
+            patient_payable: 0,
+            organizationId: orgId,
+        },
+    });
+    console.log(`Seeded test IPD admission: ${admission.admission_id} (patient ${testPatientId})`);
 
     console.log('Inventory Seeding Complete!');
 }

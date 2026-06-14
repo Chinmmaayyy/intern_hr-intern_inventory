@@ -78,6 +78,7 @@ export async function createIndent(input: unknown) {
     const { db, organizationId, session } = await requireInventoryContext(INDENT_CREATE_ROLES);
     const data = indentSchema.parse(input);
     const indentNumber = `IND-${Date.now()}`;
+    const autoApprove = data.priority === 'NORMAL';
     const indent = await db.indent.create({
       data: {
         indent_number: indentNumber,
@@ -86,9 +87,17 @@ export async function createIndent(input: unknown) {
         priority: data.priority,
         cost_center: data.cost_center,
         admission_id: data.admission_id,
-        status: 'Submitted',
+        status: autoApprove ? 'Approved' : 'Submitted',
+        approved_by: autoApprove ? session.id : null,
+        approved_at: autoApprove ? new Date() : null,
         organizationId,
-        items: { create: data.items },
+        items: {
+          create: data.items.map((item) => ({
+            item_id: item.item_id,
+            qty_requested: item.qty_requested,
+            qty_approved: autoApprove ? item.qty_requested : 0,
+          })),
+        },
       },
       include: { items: true },
     });
@@ -197,6 +206,35 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
     if (!indent) return { success: false, error: 'Indent not found' };
     if (!['Approved','Partially Issued'].includes(indent.status)) return { success: false, error: 'Indent not approved for issuance' };
 
+    // Expand lines without batch_id using FEFO from the issuing store
+    const expandedLines: Array<{ item_id: number; batch_id?: number | null; quantity: number }> = [];
+    for (const line of issueLines) {
+      if (line.batch_id != null) {
+        expandedLines.push(line);
+        continue;
+      }
+      const stocks = await db.storeStock.findMany({
+        where: {
+          store_id: indent.to_store_id,
+          item_id: line.item_id,
+          organizationId,
+          quantity_on_hand: { gt: 0 },
+        },
+        include: { batch: { select: { expiry_date: true } } },
+        orderBy: { batch: { expiry_date: 'asc' } },
+      });
+      let remaining = line.quantity;
+      for (const s of stocks) {
+        if (remaining <= 0) break;
+        const pick = Math.min(s.quantity_on_hand, remaining);
+        expandedLines.push({ item_id: line.item_id, batch_id: s.batch_id, quantity: pick });
+        remaining -= pick;
+      }
+      if (remaining > 0) {
+        expandedLines.push({ item_id: line.item_id, batch_id: null, quantity: remaining });
+      }
+    }
+
     const issueNumber = `ISS-${Date.now()}`;
     const isInterBranch = indent.from_store.branch_id !== indent.to_store.branch_id;
 
@@ -208,11 +246,11 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
           from_store_id: indent.to_store_id,
           to_store_id: indent.from_store_id,
           organizationId,
-          items: { create: issueLines },
+          items: { create: expandedLines },
         },
       });
 
-      for (const line of issueLines) {
+      for (const line of expandedLines) {
         // Deduct from issuing store stock
         let stock: any = null;
         if (line.batch_id) {

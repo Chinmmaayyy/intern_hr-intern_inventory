@@ -221,7 +221,8 @@ export default function ConsumptionPage() {
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Admission ID</label>
                     <input type="text" value={admissionId} onChange={(e) => setAdmissionId(e.target.value)}
-                      placeholder="e.g. ADM-001" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900" />
+                      placeholder="e.g. adm-inventory-e2e" className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900" />
+                    <p className="text-[10px] text-gray-400 mt-1">Seed test admission: adm-inventory-e2e</p>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Patient ID</label>

@@ -49,7 +49,7 @@ export async function login(prevState: any, formData: FormData) {
             case 'admin': redirect('/admin/dashboard');
             case 'finance': redirect('/finance/dashboard');
             case 'ipd_manager': redirect('/ipd');
-            case 'nurse': redirect('/nurse/dashboard');
+            case 'nurse': redirect('/inventory/indents');
             case 'opd_manager': redirect('/opd-manager/dashboard');
             case 'hr': redirect('/hr/dashboard');
             case 'store_manager': redirect('/inventory/dashboard');
@@ -154,7 +154,7 @@ export async function login(prevState: any, formData: FormData) {
         case 'admin': redirect('/admin/dashboard');
         case 'finance': redirect('/finance/dashboard');
         case 'ipd_manager': redirect('/ipd');
-        case 'nurse': redirect('/nurse/dashboard');
+        case 'nurse': redirect('/inventory/indents');
         case 'opd_manager': redirect('/opd-manager/dashboard');
         case 'hr': redirect('/hr/dashboard');
         case 'store_manager': redirect('/inventory/dashboard');

@@ -93,7 +93,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/verify-lab-pharmacy") ||
     pathname.startsWith("/api/zealthix/") ||
     pathname.startsWith("/api/public/") ||
-    pathname.startsWith("/api/patient/self-register")
+    pathname.startsWith("/api/patient/self-register") ||
+    pathname.startsWith("/api/dev/")
   ) {
     return NextResponse.next();
   }

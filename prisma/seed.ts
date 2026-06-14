@@ -103,6 +103,7 @@ async function main() {
         { username: 'ipd1', role: 'ipd_manager', name: 'Neha IPD Manager', specialty: null, email: 'neha.ipd@avanihospital.com', phone: '+91 98000 60001' },
         { username: 'store1', role: 'store_manager', name: 'Rajesh Store Manager', specialty: null, email: 'rajesh.store@avanihospital.com', phone: '+91 98000 70001' },
         { username: 'proc1', role: 'procurement_officer', name: 'Kavita Procurement', specialty: null, email: 'kavita.proc@avanihospital.com', phone: '+91 98000 70002' },
+        { username: 'nurse1', role: 'nurse', name: 'Sunita Ward Nurse', specialty: null, email: 'sunita.nurse@avanihospital.com', phone: '+91 98000 80001' },
     ];
 
     for (const u of users) {
@@ -510,7 +511,7 @@ async function main() {
 
     try {
         const { execSync } = require('child_process');
-        execSync('node prisma/seed-inventory.js', { stdio: 'inherit', cwd: process.cwd() });
+        execSync('npx tsx prisma/seed-inventory.ts', { stdio: 'inherit', cwd: process.cwd() });
     } catch (e: unknown) {
         console.warn('Inventory seed skipped or partial:', e instanceof Error ? e.message : String(e));
     }

@@ -502,9 +502,11 @@ export async function listItemBatches(opts?: { search?: string }) {
   }
 }
 
+const CONSUMPTION_READ_ROLES = [...new Set([...STOCK_READ_ROLES, ...STOCK_CONSUMPTION_ROLES])];
+
 export async function listConsumptions(opts?: { store_id?: number; item_id?: number; limit?: number; page?: number }) {
   try {
-    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
+    const { db, organizationId } = await requireInventoryContext(CONSUMPTION_READ_ROLES);
     const page = opts?.page ?? 1;
     const limit = opts?.limit ?? 25;
     const where: any = {
@@ -557,13 +559,39 @@ export async function recordConsumption(input: {
       return { success: false, error: 'Admission ID or Patient ID is required for patient consumption' };
     }
 
+    // Resolve batch via FEFO when not specified (batch-tracked items)
+    let batchId = input.batch_id ?? null;
+    if (batchId == null && item.is_batch_tracked) {
+      const fefoStock = await db.storeStock.findFirst({
+        where: {
+          store_id: input.store_id,
+          item_id: input.item_id,
+          organizationId,
+          quantity_on_hand: { gte: input.quantity },
+        },
+        include: { batch: { select: { expiry_date: true } } },
+        orderBy: { batch: { expiry_date: 'asc' } },
+      });
+      if (!fefoStock) {
+        const total = await db.storeStock.aggregate({
+          where: { store_id: input.store_id, item_id: input.item_id, organizationId },
+          _sum: { quantity_on_hand: true },
+        });
+        return {
+          success: false,
+          error: `Insufficient stock available in this store. Current: ${total._sum.quantity_on_hand ?? 0}`,
+        };
+      }
+      batchId = fefoStock.batch_id;
+    }
+
     const result = await db.$transaction(async (tx: any) => {
       // Find stock
       const stock = await tx.storeStock.findFirst({
         where: {
           store_id: input.store_id,
           item_id: input.item_id,
-          batch_id: input.batch_id ?? null,
+          batch_id: batchId,
           organizationId
         }
       });
@@ -587,7 +615,7 @@ export async function recordConsumption(input: {
           organizationId,
           store_id: input.store_id,
           item_id: input.item_id,
-          batch_id: input.batch_id ?? null,
+          batch_id: batchId,
           movement_type: movementType,
           quantity_in: 0,
           quantity_out: input.quantity,
