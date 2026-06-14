@@ -5,6 +5,7 @@ import {
   listGRNs,
   createPurchaseInvoice,
   approvePurchaseInvoiceVariance,
+  getPurchaseOrderById,
 } from '@/app/actions/procurement-actions';
 import { AdminPage } from '@/app/admin/components/AdminPage';
 import { FileText, RefreshCw, CheckCircle2, AlertTriangle, X } from 'lucide-react';
@@ -37,12 +38,19 @@ export default function PurchaseInvoicesPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const openMatchModal = (po: any) => {
-    setSelectedPO(po);
-    setSelectedGrnId('');
-    setInvoiceNumber(`INV-${po.po_number}-${Date.now().toString().slice(-4)}`);
-    setMatchError('');
-    setShowMatchModal(true);
+  const openMatchModal = async (po: any) => {
+    setLoading(true);
+    const res = await getPurchaseOrderById(po.id);
+    setLoading(false);
+    if (res.success && res.data) {
+      setSelectedPO(res.data);
+      setSelectedGrnId('');
+      setInvoiceNumber(`INV-${po.po_number}-${Date.now().toString().slice(-4)}`);
+      setMatchError('');
+      setShowMatchModal(true);
+    } else {
+      alert(res.error || 'Failed to load PO details');
+    }
   };
 
   const poGrns = grns.filter(g => g.po_id === selectedPO?.id);
