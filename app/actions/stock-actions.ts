@@ -502,6 +502,36 @@ export async function listItemBatches(opts?: { search?: string }) {
   }
 }
 
+export async function listConsumptions(opts?: { store_id?: number; item_id?: number; limit?: number; page?: number }) {
+  try {
+    const { db, organizationId } = await requireInventoryContext(STOCK_READ_ROLES);
+    const page = opts?.page ?? 1;
+    const limit = opts?.limit ?? 25;
+    const where: any = {
+      organizationId,
+      movement_type: { in: ['CONSUMPTION', 'PATIENT_CHARGE'] },
+    };
+    if (opts?.store_id) where.store_id = opts.store_id;
+    if (opts?.item_id) where.item_id = opts.item_id;
+    const [rows, total] = await Promise.all([
+      db.inventoryMovement.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          item: { select: { id: true, name: true, item_code: true, base_uom: true } },
+          store: { select: { id: true, name: true } },
+        },
+      }),
+      db.inventoryMovement.count({ where }),
+    ]);
+    return { success: true, data: { movements: serialize(rows), total, totalPages: Math.ceil(total / limit), page } };
+  } catch (e: any) {
+    return { success: false, error: e.message, data: { movements: [], total: 0, totalPages: 0, page: 1 } };
+  }
+}
+
 export async function recordConsumption(input: {
   store_id: number;
   item_id: number;

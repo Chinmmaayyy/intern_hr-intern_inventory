@@ -7,10 +7,15 @@ async function main() {
       id: true,
       username: true,
       email: true,
-      role: true
+      role: true,
+      organizationId: true
     }
   });
-  console.log(JSON.stringify(users, null, 2));
+  const stores = await prisma.store.findMany({ select: { id: true, name: true, store_type: true } });
+  console.log('STORES:', JSON.stringify(stores, null, 2));
+
+  const admissions = await prisma.admissions.findMany({ take: 3, select: { admission_id: true, patient_id: true, patient: { select: { full_name: true } } } });
+  console.log('ADMISSIONS:', JSON.stringify(admissions, null, 2));
 }
 
 main()

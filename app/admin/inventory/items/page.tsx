@@ -231,9 +231,19 @@ export default function ItemsPage() {
                 <tr key={item.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 font-mono text-blue-600 text-xs">{item.item_code}</td>
                   <td className="px-4 py-3">
-                    <span className="text-gray-900 font-medium">{item.name}</span>
-                    {item.is_cold_chain && <span className="ml-1 text-xs text-cyan-600">❄</span>}
-                    {item.is_batch_tracked && <span className="ml-1 text-xs text-amber-600">B</span>}
+                    <div className="text-gray-900 font-medium">{item.name}</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5 space-x-1.5 flex items-center">
+                      <span>Pur: ₹{item.std_purchase_price}</span>
+                      <span>•</span>
+                      <span>Sel: ₹{item.selling_price}</span>
+                      {item.status === 'Draft' && (item.pending_std_purchase_price > 0 || item.pending_selling_price > 0) && (
+                        <span className="text-amber-600 font-semibold bg-amber-50 px-1 rounded">
+                          (Pending: ₹{item.pending_std_purchase_price}/₹{item.pending_selling_price})
+                        </span>
+                      )}
+                    </div>
+                    {item.is_cold_chain && <span className="text-xs text-cyan-600">❄</span>}
+                    {item.is_batch_tracked && <span className="text-xs text-amber-600">B</span>}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-xs">{item.category?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500 text-xs">{item.item_type.replace(/_/g, ' ')}</td>
@@ -325,7 +335,15 @@ export default function ItemsPage() {
                   placeholder="Base UOM" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                 <input type="number" min="0" step="0.01" value={form.std_purchase_price}
                   onChange={e => setForm({ ...form, std_purchase_price: Number(e.target.value) })}
-                  placeholder="Purchase price" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                  placeholder="Purchase price (₹)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" min="0" step="0.01" value={form.selling_price}
+                  onChange={e => setForm({ ...form, selling_price: Number(e.target.value) })}
+                  placeholder="Selling price (₹)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                <input type="number" min="0" step="0.01" value={form.mrp}
+                  onChange={e => setForm({ ...form, mrp: Number(e.target.value) })}
+                  placeholder="MRP (₹)" className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
               </div>
               <div className="flex flex-wrap gap-4 text-sm">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={form.is_batch_tracked} onChange={e => setForm({ ...form, is_batch_tracked: e.target.checked })} /> Batch tracked</label>

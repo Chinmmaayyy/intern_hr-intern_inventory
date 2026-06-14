@@ -382,7 +382,7 @@ export async function receiveConfirmIndent(indent_id: number, receivedLines: Arr
   quantity: number;
 }>) {
   try {
-    const { db, organizationId, session } = await requireInventoryContext(INDENT_ISSUE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext(INDENT_READ_ROLES);
     const indent = await db.indent.findFirst({
       where: { id: indent_id, organizationId },
       include: { items: true, to_store: true, from_store: true }

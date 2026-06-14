@@ -24,7 +24,7 @@ export const GRN_WRITE_ROLES = ['admin', 'store_manager', 'pharmacist'];
 export const GRN_READ_ROLES = ['admin', 'store_manager', 'procurement_officer', 'finance', 'pharmacist'];
 
 export const PO_CREATE_ROLES = ['admin', 'procurement_officer', 'store_manager'];
-export const PO_APPROVE_ROLES = ['admin', 'finance', 'store_manager'];
+export const PO_APPROVE_ROLES = ['admin', 'finance', 'store_manager', 'procurement_officer'];
 
 export const INDENT_CREATE_ROLES = [
   'admin',

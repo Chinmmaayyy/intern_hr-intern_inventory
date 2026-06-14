@@ -177,7 +177,7 @@ export async function listPurchaseOrders(opts?: { status?: string; vendor_id?: n
         where, skip: (page - 1) * limit, take: limit,
         orderBy: { created_at: 'desc' },
         include: {
-          vendor: { select: { id: true, vendor_name: true } },
+          vendor: { select: { id: true, vendor_name: true, vendor_code: true } },
           supplier: { select: { id: true, supplier_name: true } },
           receiving_store: { select: { id: true, name: true } },
           _count: { select: { items: true } },

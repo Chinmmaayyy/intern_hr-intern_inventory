@@ -268,8 +268,18 @@ export async function createItem(input: unknown) {
     // Maker-checker status: store_manager -> Draft, admin -> Active (default)
     const status = session.role === 'admin' ? 'Active' : 'Draft';
 
+    const insertData: any = { ...data, item_code: itemCode, status, organizationId };
+    if (status === 'Draft') {
+      insertData.pending_std_purchase_price = data.std_purchase_price;
+      insertData.pending_selling_price = data.selling_price;
+      insertData.pending_mrp = data.mrp;
+      insertData.std_purchase_price = 0;
+      insertData.selling_price = 0;
+      insertData.mrp = 0;
+    }
+
     const row = await db.itemMaster.create({
-      data: { ...data, item_code: itemCode, status, organizationId },
+      data: insertData,
     });
 
     await db.system_audit_logs.create({

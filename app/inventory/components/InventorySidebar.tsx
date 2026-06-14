@@ -8,7 +8,7 @@ import { logout } from '@/app/login/actions';
 import {
     Building2, LogOut, ChevronLeft, ChevronRight, Menu, X, ChevronDown, KeyRound,
     LayoutDashboard, Store, Package, ClipboardList, ArrowLeftRight, ClipboardCheck,
-    SlidersHorizontal, FileText, ShoppingCart, BarChart3
+    SlidersHorizontal, FileText, ShoppingCart, BarChart3, Flame
 } from 'lucide-react';
 import PortalSwitcher from '@/app/admin/components/PortalSwitcher';
 import { ChangePasswordModal } from '@/app/components/ChangePasswordModal';
@@ -40,6 +40,8 @@ const INVENTORY_NAV_SECTIONS: NavSection[] = [
             { label: 'Item Master', href: '/inventory/items', icon: Package },
             { label: 'Indents & Issues', href: '/inventory/indents', icon: ClipboardList },
             { label: 'Stock Transfers', href: '/inventory/transfers', icon: ArrowLeftRight },
+            { label: 'Consumption Log', href: '/inventory/consumption', icon: Flame },
+            { label: 'Stock Issues', href: '/inventory/issues', icon: ClipboardCheck },
         ],
     },
     {
