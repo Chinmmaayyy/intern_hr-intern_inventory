@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Loader2, ExternalLink } from 'lucide-react';
+import { X, Loader2, ExternalLink, Download } from 'lucide-react';
 import { getDrillDownData, DrillDownType } from '@/app/actions/finance-actions';
 import Link from 'next/link';
 
@@ -46,6 +46,50 @@ export function DrillDownModal({ type, filters, onClose }: DrillDownModalProps) 
         URL.revokeObjectURL(url);
     };
 
+    const [excelExporting, setExcelExporting] = useState(false);
+
+    const exportExcel = async () => {
+        if (!data || data.rows.length === 0) return;
+        setExcelExporting(true);
+        try {
+            const xlsxModule = await import('xlsx');
+            const XLSX = xlsxModule.default ?? xlsxModule;
+
+            const rowKeys = data.rows[0] ? Object.keys(data.rows[0]).filter(k => k !== 'invoiceId') : [];
+
+            // Build rows with column headers as keys for clean Excel output
+            const exportRows = data.rows.map(r => {
+                const row: Record<string, unknown> = {};
+                rowKeys.forEach((key, idx) => {
+                    const header = data.columns[idx] || key;
+                    row[header] = r[key] ?? '';
+                });
+                return row;
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportRows);
+
+            // Auto-size columns based on header + data width
+            ws['!cols'] = data.columns.map((col, idx) => {
+                const key = rowKeys[idx];
+                const maxDataLen = data.rows.reduce((max, r) => {
+                    const val = String(r[key] ?? '');
+                    return Math.max(max, val.length);
+                }, 0);
+                return { wch: Math.max(col.length, maxDataLen, 10) + 2 };
+            });
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Drill-Down Data');
+            XLSX.writeFile(wb, `${type}-drilldown.xlsx`);
+        } catch (err) {
+            console.error('Excel export failed:', err);
+            alert('Excel export failed. Please try again.');
+        } finally {
+            setExcelExporting(false);
+        }
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex justify-end">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -55,10 +99,20 @@ export function DrillDownModal({ type, filters, onClose }: DrillDownModalProps) 
                     <h2 className="text-base font-black text-gray-900">{data?.title || 'Loading...'}</h2>
                     <div className="flex items-center gap-2">
                         {data && data.rows.length > 0 && (
-                            <button onClick={exportCsv}
-                                className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition">
-                                Export CSV
-                            </button>
+                            <>
+                                <button
+                                    onClick={exportExcel}
+                                    disabled={excelExporting}
+                                    className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
+                                >
+                                    {excelExporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                                    Export Excel
+                                </button>
+                                <button onClick={exportCsv}
+                                    className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition">
+                                    Export CSV
+                                </button>
+                            </>
                         )}
                         <button onClick={onClose}
                             className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">

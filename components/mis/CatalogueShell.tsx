@@ -45,6 +45,12 @@ export interface CatalogueShellProps {
     catalogue: Record<string, CatalogueEntry[]>;
     /** Total number of reports across all categories. */
     totalCount: number;
+    /**
+     * Base path prefix for report links.
+     * Defaults to '/admin/mis' — override for operational portals
+     * (e.g. '/finance/mis', '/doctor/mis').
+     */
+    basePath?: string;
 }
 
 // ─── Category metadata ────────────────────────────────────────────────────────
@@ -195,7 +201,7 @@ const ACCENT_STYLES: Record<AccentKey, {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
+export function CatalogueShell({ catalogue, totalCount, basePath = '/admin/mis' }: CatalogueShellProps) {
     const [query, setQuery] = useState('');
 
     /**
@@ -279,6 +285,7 @@ export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
                                 category="Daily Revenue"
                                 reports={filteredCategories.find(([cat]) => cat === 'Daily Revenue')![1]}
                                 isSearching={isSearching}
+                                basePath={basePath}
                             />
                         </div>
                     )}
@@ -293,6 +300,7 @@ export function CatalogueShell({ catalogue, totalCount }: CatalogueShellProps) {
                                         category={category}
                                         reports={reports}
                                         isSearching={isSearching}
+                                        basePath={basePath}
                                     />
                                 </div>
                             ))}
@@ -311,9 +319,10 @@ interface CategoryCardProps {
     category:    string;
     reports:     CatalogueEntry[];
     isSearching: boolean;
+    basePath:    string;
 }
 
-function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
+function CategoryCard({ category, reports, isSearching, basePath }: CategoryCardProps) {
     const meta   = CATEGORY_META[category] ?? FALLBACK_META;
     const styles = ACCENT_STYLES[meta.accent];
     const Icon   = meta.icon;
@@ -364,6 +373,7 @@ function CategoryCard({ category, reports, isSearching }: CategoryCardProps) {
                         report={report}
                         styles={styles}
                         isSearching={isSearching}
+                        basePath={basePath}
                     />
                 ))}
             </ul>
@@ -377,13 +387,14 @@ interface ReportRowProps {
     report:      CatalogueEntry;
     styles:      typeof ACCENT_STYLES[AccentKey];
     isSearching: boolean;
+    basePath:    string;
 }
 
-function ReportRow({ report, styles }: ReportRowProps) {
+function ReportRow({ report, styles, basePath }: ReportRowProps) {
     return (
         <li>
             <Link
-                href={`/admin/mis/${report.id}`}
+                href={`${basePath}/${report.id}`}
                 className={`
                     group flex items-start gap-3 px-5 py-3.5
                     transition-colors duration-100

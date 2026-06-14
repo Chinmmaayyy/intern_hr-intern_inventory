@@ -83,6 +83,7 @@ import {
   BookOpen,
   Landmark,
   TrendingUp,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface NavItem {
@@ -215,6 +216,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
       title: "Management",
       items: [
         { label: "Shift Swap", href: "/doctor/shift-swap", icon: ArrowLeftRight },
+        { label: "MIS Reports", href: "/doctor/mis-reports", icon: FileSpreadsheet },
       ],
     },
   ],
@@ -254,6 +256,12 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "Admit Patient", href: "/reception/ipd/admit", icon: UserPlus },
       ],
     },
+    {
+      title: "Reports",
+      items: [
+        { label: "MIS Reports", href: "/reception/mis-reports", icon: FileSpreadsheet },
+      ],
+    },
   ],
   lab_technician: [
     {
@@ -264,6 +272,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "Lab Orders", href: "/lab/technician", icon: FlaskConical },
         { label: "Inventory", href: "/lab/inventory", icon: Package },
         { label: "Reports", href: "/lab/reports", icon: BarChart3 },
+        { label: "MIS Reports", href: "/lab/mis-reports", icon: FileSpreadsheet },
       ],
     },
   ],
@@ -293,6 +302,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
       title: "Reports",
       items: [
         { label: "Pharmacy Reports", href: "/pharmacy/reports", icon: BarChart3 },
+        { label: "MIS Reports", href: "/pharmacy/mis-reports", icon: FileSpreadsheet },
       ],
     },
   ],
@@ -339,6 +349,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
         { label: "TPA / Insurance", href: "/insurance", icon: ShieldCheck },
         { label: "Revenue Analytics", href: "/finance/revenue", icon: PieChart },
         { label: "Financial Reports", href: "/finance/reports", icon: BarChart3 },
+        { label: "MIS Reports", href: "/finance/mis-reports", icon: FileSpreadsheet },
         { label: "Fiscal Periods", href: "/finance/periods", icon: CalendarCheck },
         { label: "Bank Recon", href: "/finance/bank-recon", icon: ArrowLeftRight },
         { label: "Collections", href: "/finance/collections", icon: Bell },
@@ -446,6 +457,7 @@ const NAV_BY_ROLE: Record<string, NavSection[]> = {
       title: "System",
       items: [
         { label: "Audit Trail", href: "/ipd/audit-trail", icon: Activity },
+        { label: "MIS Reports", href: "/ipd/mis-reports", icon: FileSpreadsheet },
       ],
     },
   ],

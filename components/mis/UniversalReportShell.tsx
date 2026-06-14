@@ -46,6 +46,7 @@ import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { ExportExcelButton } from '@/components/mis/ExportExcelButton';
+import { ExportPDFButton } from '@/components/mis/ExportPDFButton';
 import {
     BarChart3, ChevronDown, ChevronLeft, ChevronRight,
     Inbox, Clock4, ShieldOff, X, Download,
@@ -440,6 +441,12 @@ function DrillDownWrapper({
                                 </span>
                             )}
                         </span>
+                        <ExportPDFButton
+                            reportName={reportName}
+                            columns={columns}
+                            rows={rows}
+                            totals={totals}
+                        />
                         <ExportExcelButton
                             reportId={reportId}
                             filters={exportFilters}
