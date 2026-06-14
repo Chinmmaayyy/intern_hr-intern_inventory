@@ -64,7 +64,7 @@ export async function PortalMISCataloguePage({
     let totalCount = 0;
 
     for (const [category, rawEntries] of Object.entries(rawCatalogue)) {
-        if (!rawEntries || rawEntries.length === 0) continue;
+        if (!rawEntries) continue;
 
         safeCatalogue[category] = rawEntries.map((r: Record<string, unknown>) =>
             toSafeCatalogueEntry(r)

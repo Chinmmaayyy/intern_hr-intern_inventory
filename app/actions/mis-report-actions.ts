@@ -172,19 +172,19 @@ import type { ColumnSpec } from '@/lib/mis/types';
  * `getSession()` must remain unchanged — callers only use `orgId`, `userId`,
  * and `permissions`.
  */
+import { getSession as getRealSession } from '@/app/lib/session';
+
 async function getSession() {
-  const user = await prisma.user.findFirst({
-    select: { id: true, organizationId: true, role: true },
-  });
-  if (!user) throw new Error('No users found in database for mock session');
+  const session = await getRealSession();
+  
+  if (!session) {
+    throw new Error('UNAUTHORIZED');
+  }
 
   return {
-    orgId: user.organizationId,
-    userId: user.id,
-    // `user.role` is the raw String from the DB (e.g. "admin", "doctor").
-    // getMISPermissions() maps it to the correct MIS permission set, falling
-    // back to `viewer` defaults for any unknown role string.
-    permissions: getMISPermissions(user.role),
+    orgId: session.organization_id,
+    userId: session.id,
+    permissions: getMISPermissions(session.role),
   };
 }
 

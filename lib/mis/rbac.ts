@@ -36,7 +36,12 @@ export type MISRole =
   | 'admin'
   | 'finance'
   | 'billing_officer'
-  | 'viewer';
+  | 'viewer'
+  | 'doctor'
+  | 'receptionist'
+  | 'lab_technician'
+  | 'pharmacist'
+  | 'ipd_manager';
 
 // ─── Permission → Role mapping ────────────────────────────────────────────────
 
@@ -58,6 +63,7 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
     'mis_reports.revenue.view',
     'mis_reports.finance.view',
     'mis_reports.registration.view',
+    'mis_reports.appointment.view',
     'mis_reports.frontdesk.view',
     'mis_reports.admission.view',
     'mis_reports.diagnostic.view',
@@ -72,6 +78,29 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
   ],
   billing_officer: [
     'mis_reports.billing.view',
+  ],
+  doctor: [
+    'mis_reports.appointment.view',
+    'mis_reports.diagnostic.view',
+    'mis_reports.specialized.view',
+  ],
+  receptionist: [
+    'mis_reports.registration.view',
+    'mis_reports.appointment.view',
+    'mis_reports.frontdesk.view',
+  ],
+  lab_technician: [
+    'mis_reports.diagnostic.view',
+  ],
+  pharmacist: [
+    'mis_reports.pharmacy.view',
+    'mis_reports.inventory.view',
+  ],
+  ipd_manager: [
+    'mis_reports.admission.view',
+    'mis_reports.frontdesk.view',
+    'mis_reports.billing.view',
+    'mis_reports.specialized.view',
   ],
   viewer: [
     'mis_reports.billing.view',

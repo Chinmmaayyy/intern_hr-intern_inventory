@@ -49,7 +49,7 @@ import { ExportExcelButton } from '@/components/mis/ExportExcelButton';
 import { ExportPDFButton } from '@/components/mis/ExportPDFButton';
 import {
     BarChart3, ChevronDown, ChevronLeft, ChevronRight,
-    Inbox, Clock4, ShieldOff, X, Download,
+    Inbox, Clock4, ShieldOff, X, Download, Loader2,
 } from 'lucide-react';
 import { generateReport, getReportColumns } from '@/app/actions/mis-report-actions';
 
@@ -769,6 +769,58 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
     const rows   = payload?.rows   ?? [];
     const totals = payload?.totals ?? {};
 
+    const [excelExporting, setExcelExporting] = useState(false);
+
+    const exportCsv = () => {
+        if (!payload || !payload.rows || payload.rows.length === 0) return;
+        const rowKeys = columns.map(c => c.key);
+        const headers = columns.map(c => `"${String(c.header).replace(/"/g, '""')}"`).join(',');
+        const csvRows = payload.rows.map(r => 
+            rowKeys.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(',')
+        );
+        const csv = [headers, ...csvRows].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `${name}-detail.csv`; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const exportExcel = async () => {
+        if (!payload || !payload.rows || payload.rows.length === 0) return;
+        setExcelExporting(true);
+        try {
+            const xlsxModule = await import('xlsx');
+            const XLSX = xlsxModule.default ?? xlsxModule;
+
+            const exportRows = payload.rows.map(r => {
+                const row: Record<string, unknown> = {};
+                columns.forEach(c => {
+                    row[c.label] = r[c.key] ?? '';
+                });
+                return row;
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportRows);
+
+            ws['!cols'] = columns.map(c => {
+                const maxDataLen = payload.rows!.reduce((max, r) => {
+                    const val = String(r[c.key] ?? '');
+                    return Math.max(max, val.length);
+                }, 0);
+                return { wch: Math.max((c.label || '').length, maxDataLen, 10) + 2 };
+            });
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Detail Data');
+            XLSX.writeFile(wb, `${name}-detail.xlsx`);
+        } catch (err) {
+            console.error('Excel export failed:', err);
+            alert('Excel export failed. Please try again.');
+        } finally {
+            setExcelExporting(false);
+        }
+    };
+
     return (
         <div
             className="bg-white rounded-2xl border border-gray-200 border-l-4 border-l-emerald-500 shadow-md overflow-hidden animate-in slide-in-from-top-2 duration-200"
@@ -788,14 +840,37 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
                         </span>
                     )}
                 </div>
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                    aria-label="Close detail panel"
-                >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                </button>
+                <div className="flex items-center gap-3">
+                    {!loading && !error && payload && !payload.error && rows.length > 0 && (
+                        <div className="flex items-center gap-1.5 mr-2">
+                            <button
+                                type="button"
+                                onClick={exportCsv}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-md transition-colors"
+                            >
+                                <Download className="h-3 w-3" />
+                                CSV
+                            </button>
+                            <button
+                                type="button"
+                                onClick={exportExcel}
+                                disabled={excelExporting}
+                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 px-2.5 py-1 rounded-md transition-colors"
+                            >
+                                {excelExporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                                Excel
+                            </button>
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                        aria-label="Close detail panel"
+                    >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                </div>
             </div>
 
             {/* ── Loading skeleton ──────────────────────────────────────────── */}
