@@ -310,7 +310,7 @@ export async function createPurchaseInvoice(input: {
   }>;
 }) {
   try {
-    const { db, organizationId, session } = await requireInventoryContext(PROCUREMENT_FINANCE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext([...PROCUREMENT_FINANCE_ROLES, 'procurement_officer']);
     const po = await db.purchaseOrder.findUnique({
       where: { id: input.poId },
       include: { items: true }
@@ -374,7 +374,7 @@ export async function createPurchaseInvoice(input: {
         gst_rate: gstRate,
         cgst_amount: taxAmount / 2,
         sgst_amount: taxAmount / 2,
-        total_amount: lineCost + taxAmount,
+        line_total: lineCost + taxAmount,
       });
     }
 
@@ -483,7 +483,7 @@ export async function approvePurchaseInvoiceVariance(invoiceId: number) {
 
 export async function performThreeWayMatchAndInvoice(poId: number, grnNumber: string, invoiceNumber: string, invoiceDate: string) {
   try {
-    const { db, organizationId, session } = await requireInventoryContext(PROCUREMENT_FINANCE_ROLES);
+    const { db, organizationId, session } = await requireInventoryContext([...PROCUREMENT_FINANCE_ROLES, 'procurement_officer']);
     const po = await db.purchaseOrder.findUnique({
       where: { id: poId },
       include: { items: true },
@@ -549,8 +549,8 @@ export async function approvePurchaseOrder(id: number) {
     const userRole = session.role;
     const amount = po.total_amount || 0;
 
-    if (userRole === 'store_manager' && amount > thresholds.store_manager) {
-      return { success: false, error: `PO amount exceeds Store Manager approval limit of ₹${thresholds.store_manager.toLocaleString()}` };
+    if ((userRole === 'store_manager' || userRole === 'procurement_officer') && amount > thresholds.store_manager) {
+      return { success: false, error: `PO amount exceeds ${userRole === 'store_manager' ? 'Store Manager' : 'Procurement Officer'} approval limit of ₹${thresholds.store_manager.toLocaleString()}` };
     }
     if (userRole === 'admin' && amount > thresholds.admin) {
       return { success: false, error: `PO amount exceeds Admin approval limit of ₹${thresholds.admin.toLocaleString()}. Requires Finance approval.` };

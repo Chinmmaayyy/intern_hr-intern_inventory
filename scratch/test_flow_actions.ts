@@ -57,10 +57,24 @@ async function test() {
   const { createItem, approveItem } = await import('../app/actions/item-master-actions');
   const { createPurchaseOrder, approvePurchaseOrder, sendPurchaseOrder, createGRN, createPurchaseInvoice } = await import('../app/actions/procurement-actions');
   const { createIndent, approveIndent, issueIndentItems, receiveConfirmIndent } = await import('../app/actions/indent-actions');
-  const { logConsumption } = await import('../app/actions/stock-actions');
+  const { recordConsumption } = await import('../app/actions/stock-actions');
 
   // Clear existing test items if any to avoid name conflicts
-  await prisma.itemMaster.deleteMany({ where: { name: 'Surgical Kit A (Test Action)' } });
+  const oldItem = await prisma.itemMaster.findFirst({ where: { name: 'Surgical Kit A (Test Action)' } });
+  if (oldItem) {
+    const itemId = oldItem.id;
+    await prisma.ipdChargePosting.deleteMany({ where: { description: `Consumable: ${oldItem.name}` } });
+    await prisma.invoice_items.deleteMany({ where: { description: `Consumable: ${oldItem.name}` } });
+    await prisma.inventoryMovement.deleteMany({ where: { item_id: itemId } });
+    await prisma.indentItem.deleteMany({ where: { item_id: itemId } });
+    await prisma.stockIssueItem.deleteMany({ where: { item_id: itemId } });
+    await prisma.pharmacyPurchaseInvoiceLine.deleteMany({ where: { item_id: itemId } });
+    await prisma.goodsReceiptNoteItem.deleteMany({ where: { item_id: itemId } });
+    await prisma.purchaseOrderItem.deleteMany({ where: { item_id: itemId } });
+    await prisma.storeStock.deleteMany({ where: { item_id: itemId } });
+    await prisma.itemBatch.deleteMany({ where: { item_id: itemId } });
+    await prisma.itemMaster.delete({ where: { id: itemId } });
+  }
 
   // STEP 1: Create a Draft Item (Store Manager)
   await mockLogin('store1', 'store_manager', '75e3158f-31d1-4427-a6d8-9a7e4e27ebb7');
@@ -141,10 +155,9 @@ async function test() {
   if (!poApproveRes.success) throw new Error(`Step 3 failed (approvePurchaseOrder): ${poApproveRes.error}`);
   console.log(`Step 3 Passed: PO approved`);
 
-  // Send PO (ordered)
   const poSendRes = await sendPurchaseOrder(po.id);
   if (!poSendRes.success) throw new Error(`Step 3 failed (sendPurchaseOrder): ${poSendRes.error}`);
-  console.log(`Step 3 Passed: PO sent, status: '${poSendRes.data.status}'`);
+  console.log(`Step 3 Passed: PO sent`);
 
   // STEP 4: Receive Goods (GRN) (Store Manager)
   await mockLogin('store1', 'store_manager', '75e3158f-31d1-4427-a6d8-9a7e4e27ebb7');
@@ -269,7 +282,7 @@ async function test() {
 
   // STEP 8: Log Consumption & Patient Charge (Ward Nurse)
   const wardBatch = await prisma.itemBatch.findFirst({ where: { item_id: item.id } }); // batch should be in WARD-A now
-  const consumptionRes = await logConsumption({
+  const consumptionRes = await recordConsumption({
     store_id: 4,
     item_id: item.id,
     batch_id: wardBatch?.id,
@@ -278,7 +291,7 @@ async function test() {
     admission_id: 'AXT-ADM-26-27-001',
     patient_id: 'AVN-2026-00001'
   });
-  if (!consumptionRes.success) throw new Error(`Step 8 failed (logConsumption): ${consumptionRes.error}`);
+  if (!consumptionRes.success) throw new Error(`Step 8 failed (recordConsumption): ${consumptionRes.error}`);
   console.log(`Step 8 Passed: Consumption logged successfully`);
 
   // Verify Ward A Stock drops to 18
@@ -291,18 +304,15 @@ async function test() {
   console.log(`Step 8 Validation Passed: Ward-A Store stock dropped to 18`);
 
   // Verify patient charge exists in billing
-  const ipdCharges = await prisma.$queryRaw<any[]>`
-    SELECT * FROM ipd_patient_charges
-    WHERE admission_id = 'AXT-ADM-26-27-001'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  if (ipdCharges.length === 0) throw new Error('Step 8 Billing Verification Failed: No charge record found in ipd_patient_charges');
-  const charge = ipdCharges[0];
-  if (charge.description !== `Consumable: Surgical Kit A (Test Action)` || charge.quantity !== 2 || charge.unit_price !== 150) {
-    throw new Error(`Step 8 Billing Verification Failed: Charge details incorrect: description=${charge.description}, quantity=${charge.quantity}, price=${charge.unit_price}`);
+  const charge = await prisma.ipdChargePosting.findFirst({
+    where: { admission_id: 'AXT-ADM-26-27-001' },
+    orderBy: { posted_at: 'desc' }
+  });
+  if (!charge) throw new Error('Step 8 Billing Verification Failed: No charge record found in ipdChargePosting');
+  if (charge.description !== `Consumable: Surgical Kit A (Test Action)` || Number(charge.amount) !== 2 * 150) {
+    throw new Error(`Step 8 Billing Verification Failed: Charge details incorrect: description=${charge.description}, amount=${charge.amount}`);
   }
-  console.log(`Step 8 Validation Passed: interim patient bill charge correctly posted! Details: '${charge.description}', Qty: ${charge.quantity}, Price: ₹${charge.unit_price}`);
+  console.log(`Step 8 Validation Passed: interim patient bill charge correctly posted! Details: '${charge.description}', Amount: ₹${charge.amount}`);
 
   console.log('--- ALL 8 STEPS COMPLETED AND VERIFIED PERFECTLY! ---');
   await prisma.$disconnect();

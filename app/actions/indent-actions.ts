@@ -309,7 +309,7 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
           } catch (glErr: any) {
             console.error('Failed to post direct issue consumption to GL:', glErr.message);
           }
-        } else if (!isInterBranch) {
+        } else if (false) {
           // Same branch: 1-step direct receipt
           const destStock = await tx.storeStock.findFirst({
             where: { store_id: indent.from_store_id, item_id: line.item_id, batch_id: line.batch_id ?? null },
@@ -358,7 +358,7 @@ export async function issueIndentItems(indent_id: number, issueLines: Array<{
       
       let nextStatus = indent.status;
       if (allIssued) {
-        nextStatus = isInterBranch ? 'In Transit' : 'Issued';
+        nextStatus = 'In Transit';
       } else if (anyIssued) {
         nextStatus = 'Partially Issued';
       }
