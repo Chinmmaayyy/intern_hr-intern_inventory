@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, ExternalLink } from 'lucide-react';
+import { X, ExternalLink, Loader2 } from 'lucide-react';
 import { getDrillDownData, DrillDownType } from '@/app/actions/finance-actions';
 import Link from 'next/link';
 

@@ -774,7 +774,7 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
     const exportCsv = () => {
         if (!payload || !payload.rows || payload.rows.length === 0) return;
         const rowKeys = columns.map(c => c.key);
-        const headers = columns.map(c => `"${String(c.header).replace(/"/g, '""')}"`).join(',');
+        const headers = columns.map(c => `"${String(c.label).replace(/"/g, '""')}"`).join(',');
         const csvRows = payload.rows.map(r => 
             rowKeys.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(',')
         );
