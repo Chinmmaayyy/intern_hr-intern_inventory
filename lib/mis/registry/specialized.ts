@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
@@ -139,18 +138,36 @@ export const otSurgeryTatReport: ReportDefinition = {
   },
 };
 
+// ─── Phase C1: Ambulance Reports — Rewritten against ambulance_requests ──────
+//
+// BEFORE (Phase C audit finding §1.5):
+//   All 3 reports queried system_audit_logs WHERE action = 'AMBULANCE_REQUEST'
+//   and extracted JSON fields via ::jsonb->>'key'. This was fragile (JSON shape
+//   changes silently break everything), duplicated data from the actual source,
+//   and ambulanceTatReport hardcoded a fixed 15-minute TAT for every row.
+//
+// AFTER:
+//   All 3 reports query the purpose-built ambulance_requests table whose
+//   dispatch_tat_mins and total_tat_mins are written atomically by the app
+//   on each status transition — no runtime computation needed.
+
 export const ambulanceOrdersReport: ReportDefinition = {
   id: 'ambulance-orders',
   category: ReportCategory.Ambulance,
   name: 'Ambulance - Ambulance Orders',
-  description: 'Log of ambulance orders and dispatches from the audit logs.',
+  description: 'All ambulance orders with dispatch status, vehicle, and billing amount.',
   filters: defaultFilters,
   columns: [
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'order_id', label: 'Order ID', type: 'string' },
-    { key: 'emergency_type', label: 'Emergency Type', type: 'string' },
-    { key: 'pickup_address', label: 'Pickup Address', type: 'string' },
-    { key: 'contact_phone', label: 'Contact Phone', type: 'string' },
+    { key: 'date',           label: 'Date',             type: 'date' },
+    { key: 'order_id',       label: 'Request No',        type: 'string' },
+    { key: 'request_type',   label: 'Request Type',      type: 'string' },
+    { key: 'status',         label: 'Status',            type: 'string' },
+    { key: 'patient_name',   label: 'Patient Name',      type: 'string' },
+    { key: 'vehicle_number', label: 'Vehicle No',        type: 'string' },
+    { key: 'driver_name',    label: 'Driver',            type: 'string' },
+    { key: 'pickup_address', label: 'Pickup Address',    type: 'string' },
+    { key: 'destination',    label: 'Destination',       type: 'string' },
+    { key: 'billing_amount', label: 'Billing Amount',    type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
@@ -158,20 +175,33 @@ export const ambulanceOrdersReport: ReportDefinition = {
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(created_at) as "date",
-        NULLIF(details, '')::jsonb->>'request_id' as "order_id",
-        NULLIF(details, '')::jsonb->>'emergency_type' as "emergency_type",
-        NULLIF(details, '')::jsonb->>'pickup_address' as "pickup_address",
-        NULLIF(details, '')::jsonb->>'contact_phone' as "contact_phone"
-      FROM "system_audit_logs"
-      WHERE "organizationId" = ${orgId}
-        AND action = 'AMBULANCE_REQUEST'
-        AND created_at >= ${new Date(date_start)}
-        AND created_at <= ${new Date(date_end)}
-      ORDER BY created_at DESC
+      SELECT
+        DATE(ar.requested_at)                                  AS "date",
+        ar.request_number                                      AS "order_id",
+        ar.request_type                                        AS "request_type",
+        ar.status                                              AS "status",
+        COALESCE(ar.patient_name, 'Unknown')                   AS "patient_name",
+        COALESCE(ar.vehicle_number, '—')                       AS "vehicle_number",
+        COALESCE(ar.driver_name,   '—')                        AS "driver_name",
+        COALESCE(ar.pickup_address, '—')                       AS "pickup_address",
+        COALESCE(ar.destination,   '—')                        AS "destination",
+        COALESCE(ar.billing_amount, 0)                         AS "billing_amount"
+      FROM "ambulance_requests" ar
+      WHERE ar."organizationId" = ${orgId}
+        AND ar.requested_at >= ${new Date(date_start)}
+        AND ar.requested_at <= ${new Date(date_end)}
+      ORDER BY ar.requested_at DESC
     `;
-    return { rows, totals: {} };
+
+    const totals = rows.reduce((acc, row) => {
+      acc.billing_amount += Number(row.billing_amount || 0);
+      return acc;
+    }, { billing_amount: 0 });
+
+    return {
+      rows: rows.map(r => ({ ...r, billing_amount: Number(r.billing_amount || 0) })),
+      totals,
+    };
   },
 };
 
@@ -179,33 +209,40 @@ export const ambulanceRequestReport: ReportDefinition = {
   id: 'ambulance-request',
   category: ReportCategory.Ambulance,
   name: 'Ambulance - Ambulance Request',
-  description: 'Incoming requests for ambulance dispatch.',
+  description: 'All incoming ambulance dispatch requests with contact and location details.',
   filters: defaultFilters,
   columns: [
-    { key: 'request_date', label: 'Request Date', type: 'date' },
-    { key: 'request_id', label: 'Request ID', type: 'string' },
-    { key: 'type', label: 'Type', type: 'string' },
-    { key: 'location', label: 'Location', type: 'string' },
-    { key: 'status', label: 'Status', type: 'string' },
+    { key: 'request_date',  label: 'Request Date', type: 'date' },
+    { key: 'request_id',    label: 'Request No',   type: 'string' },
+    { key: 'type',          label: 'Type',          type: 'string' },
+    { key: 'contact_phone', label: 'Contact Phone', type: 'string' },
+    { key: 'location',      label: 'Pickup Address', type: 'string' },
+    { key: 'destination',   label: 'Destination',   type: 'string' },
+    { key: 'status',        label: 'Status',        type: 'string' },
   ],
   defaultSort: { column: 'request_date', direction: 'desc' },
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.ambulance.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // This report shows ALL requests (any status), not just 'Requested' —
+    // the ambulanceOrdersReport already covers the all-status view.
+    // Here we expose the request intake perspective with contact details
+    // so the control room can see who called and from where.
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(created_at) as "request_date",
-        NULLIF(details, '')::jsonb->>'request_id' as "request_id",
-        NULLIF(details, '')::jsonb->>'emergency_type' as "type",
-        NULLIF(details, '')::jsonb->>'pickup_address' as "location",
-        'Requested' as "status"
-      FROM "system_audit_logs"
-      WHERE "organizationId" = ${orgId}
-        AND action = 'AMBULANCE_REQUEST'
-        AND created_at >= ${new Date(date_start)}
-        AND created_at <= ${new Date(date_end)}
-      ORDER BY created_at DESC
+      SELECT
+        DATE(ar.requested_at)                   AS "request_date",
+        ar.request_number                        AS "request_id",
+        ar.request_type                          AS "type",
+        COALESCE(ar.contact_phone, '—')          AS "contact_phone",
+        COALESCE(ar.pickup_address, '—')         AS "location",
+        COALESCE(ar.destination,   '—')          AS "destination",
+        ar.status                                AS "status"
+      FROM "ambulance_requests" ar
+      WHERE ar."organizationId" = ${orgId}
+        AND ar.requested_at >= ${new Date(date_start)}
+        AND ar.requested_at <= ${new Date(date_end)}
+      ORDER BY ar.requested_at DESC
     `;
     return { rows, totals: {} };
   },
@@ -215,53 +252,97 @@ export const ambulanceTatReport: ReportDefinition = {
   id: 'ambulance-tat',
   category: ReportCategory.Ambulance,
   name: 'Ambulance - Ambulance TAT',
-  description: 'Turnaround times for ambulance dispatches.',
+  description: 'Accurate dispatch and total turnaround times for all completed ambulance runs.',
   filters: defaultFilters,
   columns: [
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'request_id', label: 'Request ID', type: 'string' },
-    { key: 'dispatch_time', label: 'Dispatch Time', type: 'string' },
-    { key: 'arrival_time', label: 'Arrival Time', type: 'string' },
-    { key: 'tat_mins', label: 'TAT (mins)', type: 'number', total: 'avg' },
+    { key: 'date',               label: 'Date',                   type: 'date' },
+    { key: 'request_id',         label: 'Request No',              type: 'string' },
+    { key: 'patient_name',       label: 'Patient',                 type: 'string' },
+    { key: 'status',             label: 'Status',                  type: 'string' },
+    { key: 'requested_at',       label: 'Requested At',            type: 'string' },
+    { key: 'dispatched_at',      label: 'Dispatched At',           type: 'string' },
+    { key: 'completed_at',       label: 'Completed At',            type: 'string' },
+    { key: 'dispatch_tat_mins',  label: 'Dispatch TAT (mins)',     type: 'number', total: 'avg' },
+    { key: 'tat_mins',           label: 'Total TAT (mins)',        type: 'number', total: 'avg' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.ambulance.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Only completed requests have meaningful TAT data — Cancelled and still-open
+    // requests are excluded so averages are not polluted by NULL or zero values.
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(created_at) as "date",
-        NULLIF(details, '')::jsonb->>'request_id' as "request_id",
-        CAST(created_at AS TEXT) as "dispatch_time",
-        CAST(created_at + interval '15 minutes' AS TEXT) as "arrival_time",
-        15 as "tat_mins"
-      FROM "system_audit_logs"
-      WHERE "organizationId" = ${orgId}
-        AND action = 'AMBULANCE_REQUEST'
-        AND created_at >= ${new Date(date_start)}
-        AND created_at <= ${new Date(date_end)}
-      ORDER BY created_at DESC
+      SELECT
+        DATE(ar.requested_at)                                          AS "date",
+        ar.request_number                                              AS "request_id",
+        COALESCE(ar.patient_name, 'Unknown')                           AS "patient_name",
+        ar.status                                                      AS "status",
+        TO_CHAR(ar.requested_at  AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "requested_at",
+        TO_CHAR(ar.dispatched_at AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "dispatched_at",
+        TO_CHAR(ar.completed_at  AT TIME ZONE 'Asia/Kolkata', 'HH24:MI') AS "completed_at",
+        ar.dispatch_tat_mins                                           AS "dispatch_tat_mins",
+        ar.total_tat_mins                                              AS "tat_mins"
+      FROM "ambulance_requests" ar
+      WHERE ar."organizationId" = ${orgId}
+        AND ar.status = 'Completed'
+        AND ar.requested_at >= ${new Date(date_start)}
+        AND ar.requested_at <= ${new Date(date_end)}
+      ORDER BY ar.requested_at DESC
     `;
-    return { rows, totals: { tat_mins: rows.length ? 15 : 0 } };
+
+    // Compute averages for the footer; skip NULLs so partial dispatches don't drag
+    // down the dispatch_tat average if they were never actually dispatched.
+    const dispatchRows = rows.filter(r => r.dispatch_tat_mins != null);
+    const totalRows    = rows.filter(r => r.tat_mins != null);
+
+    const avgDispatch = dispatchRows.length
+      ? Math.round(dispatchRows.reduce((s, r) => s + Number(r.dispatch_tat_mins), 0) / dispatchRows.length)
+      : 0;
+    const avgTotal = totalRows.length
+      ? Math.round(totalRows.reduce((s, r) => s + Number(r.tat_mins), 0) / totalRows.length)
+      : 0;
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        dispatch_tat_mins: r.dispatch_tat_mins != null ? Number(r.dispatch_tat_mins) : null,
+        tat_mins:          r.tat_mins          != null ? Number(r.tat_mins)          : null,
+      })),
+      totals: { dispatch_tat_mins: avgDispatch, tat_mins: avgTotal },
+    };
   },
 };
 
-// ─── Batch 22: Optical (Finale) (SN 102–106) ────────
+// ─── Phase C2: Optical Reports — Rewritten against optical_orders ──────────
+//
+// BEFORE (Phase C audit finding §1.6):
+//   All 5 reports used `ii.department ILIKE '%Optical%'` on invoice_items.
+//   This silently misses data whenever a department is named "Vision Care",
+//   "Optometry", or "optical services". It also had no structural link to
+//   lens/frame/accessory granularity — it just read generic invoice line items.
+//
+// AFTER:
+//   Optical item-level reports query optical_order_items (exact item_type
+//   discrimination). Settlement/payment reports join optical_orders to the
+//   invoices table via the invoice_id FK written at order creation time.
+//   This makes optical data structurally isolated and schema-enforced.
 
 export const opticalItemBillingReport: ReportDefinition = {
   id: 'optical-item-billing',
   category: ReportCategory.Optical,
   name: 'Optical - Optical Item Billing Details',
-  description: 'Granular details of optical items billed via invoices.',
+  description: 'Granular line-item breakdown of every optical order item billed.',
   filters: defaultFilters,
   columns: [
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'invoice_number', label: 'Invoice No', type: 'string' },
-    { key: 'item_name', label: 'Item Name', type: 'string' },
-    { key: 'quantity', label: 'Quantity', type: 'number', total: 'sum' },
-    { key: 'unit_price', label: 'Unit Price', type: 'currency' },
-    { key: 'total_amount', label: 'Total Amount', type: 'currency', total: 'sum' },
+    { key: 'date',         label: 'Date',          type: 'date' },
+    { key: 'invoice_number', label: 'Invoice No',  type: 'string' },
+    { key: 'order_number', label: 'Order No',       type: 'string' },
+    { key: 'item_type',    label: 'Item Type',      type: 'string' },
+    { key: 'item_name',    label: 'Item Name',      type: 'string' },
+    { key: 'quantity',     label: 'Quantity',       type: 'number', total: 'sum' },
+    { key: 'unit_price',   label: 'Unit Price',     type: 'currency' },
+    { key: 'total_amount', label: 'Total Amount',   type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
@@ -269,30 +350,38 @@ export const opticalItemBillingReport: ReportDefinition = {
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(i.created_at) as "date",
-        i.invoice_number as "invoice_number",
-        ii.description as "item_name",
-        ii.quantity as "quantity",
-        ii.unit_price as "unit_price",
-        ii.total_price as "total_amount"
-      FROM "invoice_items" ii
-      JOIN "invoices" i ON ii.invoice_id = i.id
-      WHERE i."organizationId" = ${orgId}
-        AND ii.department ILIKE '%Optical%'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
-      ORDER BY i.created_at DESC
+      SELECT
+        DATE(oo.order_date)                                AS "date",
+        COALESCE(i.invoice_number, '—')                    AS "invoice_number",
+        oo.order_number                                    AS "order_number",
+        oi.item_type                                       AS "item_type",
+        oi.item_name                                       AS "item_name",
+        oi.quantity                                        AS "quantity",
+        oi.unit_price                                      AS "unit_price",
+        oi.total_price                                     AS "total_amount"
+      FROM "optical_order_items" oi
+      JOIN "optical_orders"      oo ON oi.order_id = oo.id
+      LEFT JOIN "invoices"        i  ON oo.invoice_id = i.id
+      WHERE oo."organizationId" = ${orgId}
+        AND oo.order_date >= ${new Date(date_start)}
+        AND oo.order_date <= ${new Date(date_end)}
+      ORDER BY oo.order_date DESC, oo.order_number, oi.id
     `;
+
     const totals = rows.reduce((acc, row) => {
-      acc.quantity += Number(row.quantity || 0);
+      acc.quantity     += Number(row.quantity     || 0);
       acc.total_amount += Number(row.total_amount || 0);
       return acc;
     }, { quantity: 0, total_amount: 0 });
 
-    return { 
-      rows: rows.map(r => ({ ...r, quantity: Number(r.quantity), unit_price: Number(r.unit_price), total_amount: Number(r.total_amount) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        quantity:     Number(r.quantity     || 0),
+        unit_price:   Number(r.unit_price   || 0),
+        total_amount: Number(r.total_amount || 0),
+      })),
+      totals,
     };
   },
 };
@@ -301,41 +390,49 @@ export const opticalProductBillingReport: ReportDefinition = {
   id: 'optical-product-billing',
   category: ReportCategory.Optical,
   name: 'Optical - Optical Product Billing Details',
-  description: 'Aggregated product-level breakdown of optical sales.',
+  description: 'Aggregated product-level breakdown of optical sales by item name and type.',
   filters: defaultFilters,
   columns: [
-    { key: 'product_name', label: 'Product Name', type: 'string' },
-    { key: 'total_quantity_sold', label: 'Quantity Sold', type: 'number', total: 'sum' },
-    { key: 'total_revenue', label: 'Total Revenue', type: 'currency', total: 'sum' },
+    { key: 'item_type',            label: 'Item Type',       type: 'string' },
+    { key: 'product_name',         label: 'Product Name',    type: 'string' },
+    { key: 'total_quantity_sold',  label: 'Qty Sold',        type: 'number', total: 'sum' },
+    { key: 'total_revenue',        label: 'Total Revenue',   type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'total_revenue', direction: 'desc' },
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Grouped by item_type + item_name to give type-level subtotals
+    // (e.g. all "Crizal Forte" lenses sold across all orders in the period).
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        ii.description as "product_name",
-        SUM(ii.quantity) as "total_quantity_sold",
-        SUM(ii.total_price) as "total_revenue"
-      FROM "invoice_items" ii
-      JOIN "invoices" i ON ii.invoice_id = i.id
-      WHERE i."organizationId" = ${orgId}
-        AND ii.department ILIKE '%Optical%'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
-      GROUP BY ii.description
-      ORDER BY SUM(ii.total_price) DESC
+      SELECT
+        oi.item_type                                       AS "item_type",
+        oi.item_name                                       AS "product_name",
+        SUM(oi.quantity)                                   AS "total_quantity_sold",
+        SUM(oi.total_price)                                AS "total_revenue"
+      FROM "optical_order_items" oi
+      JOIN "optical_orders" oo ON oi.order_id = oo.id
+      WHERE oo."organizationId" = ${orgId}
+        AND oo.order_date >= ${new Date(date_start)}
+        AND oo.order_date <= ${new Date(date_end)}
+      GROUP BY oi.item_type, oi.item_name
+      ORDER BY SUM(oi.total_price) DESC
     `;
+
     const totals = rows.reduce((acc, row) => {
       acc.total_quantity_sold += Number(row.total_quantity_sold || 0);
-      acc.total_revenue += Number(row.total_revenue || 0);
+      acc.total_revenue       += Number(row.total_revenue       || 0);
       return acc;
     }, { total_quantity_sold: 0, total_revenue: 0 });
 
-    return { 
-      rows: rows.map(r => ({ ...r, total_quantity_sold: Number(r.total_quantity_sold), total_revenue: Number(r.total_revenue) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        total_quantity_sold: Number(r.total_quantity_sold || 0),
+        total_revenue:       Number(r.total_revenue       || 0),
+      })),
+      totals,
     };
   },
 };
@@ -344,42 +441,50 @@ export const opticalDailySettlementReport: ReportDefinition = {
   id: 'optical-daily-settlement',
   category: ReportCategory.Optical,
   name: 'Optical - Optical Daily Settlement Report',
-  description: 'List of individual payment settlements received for Optical bills.',
+  description: 'Individual payment transactions received against optical orders.',
   filters: defaultFilters,
   columns: [
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'invoice_number', label: 'Invoice No', type: 'string' },
-    { key: 'payment_method', label: 'Payment Method', type: 'string' },
-    { key: 'settled_amount', label: 'Settled Amount', type: 'currency', total: 'sum' },
+    { key: 'date',           label: 'Date',            type: 'date' },
+    { key: 'order_number',   label: 'Order No',         type: 'string' },
+    { key: 'invoice_number', label: 'Invoice No',       type: 'string' },
+    { key: 'patient_id',     label: 'Patient ID',       type: 'string' },
+    { key: 'payment_method', label: 'Payment Method',   type: 'string' },
+    { key: 'settled_amount', label: 'Settled Amount',   type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Join path: optical_orders → invoices → payments
+    // Only optical orders that have a linked invoice can have payments.
+    // Orders without an invoice_id (advance-only or unbilled) show no settlement rows.
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(p.created_at) as "date",
-        i.invoice_number as "invoice_number",
-        p.payment_method as "payment_method",
-        p.amount as "settled_amount"
-      FROM "payments" p
-      JOIN "invoices" i ON p.invoice_id = i.id
-      WHERE i."organizationId" = ${orgId}
-        AND EXISTS (SELECT 1 FROM "invoice_items" ii WHERE ii.invoice_id = i.id AND ii.department ILIKE '%Optical%')
+      SELECT
+        DATE(p.created_at)                                 AS "date",
+        oo.order_number                                    AS "order_number",
+        i.invoice_number                                   AS "invoice_number",
+        oo.patient_id                                      AS "patient_id",
+        p.payment_method                                   AS "payment_method",
+        p.amount                                           AS "settled_amount"
+      FROM "optical_orders" oo
+      JOIN "invoices"  i  ON oo.invoice_id = i.id
+      JOIN "payments"  p  ON p.invoice_id  = i.id
+      WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
         AND p.created_at >= ${new Date(date_start)}
         AND p.created_at <= ${new Date(date_end)}
       ORDER BY p.created_at DESC
     `;
+
     const totals = rows.reduce((acc, row) => {
       acc.settled_amount += Number(row.settled_amount || 0);
       return acc;
     }, { settled_amount: 0 });
 
-    return { 
-      rows: rows.map(r => ({ ...r, settled_amount: Number(r.settled_amount) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({ ...r, settled_amount: Number(r.settled_amount || 0) })),
+      totals,
     };
   },
 };
@@ -388,12 +493,13 @@ export const opticalDailySettlementSumReport: ReportDefinition = {
   id: 'optical-daily-settlement-sum',
   category: ReportCategory.Optical,
   name: 'Optical - Optical Daily Settlement Sum Report',
-  description: 'Aggregate totals of Optical collections by payment mode.',
+  description: 'Aggregate daily collections for optical department, grouped by payment mode.',
   filters: defaultFilters,
   columns: [
-    { key: 'date', label: 'Date', type: 'date' },
-    { key: 'payment_method', label: 'Payment Method', type: 'string' },
-    { key: 'total_settled', label: 'Total Settled', type: 'currency', total: 'sum' },
+    { key: 'date',           label: 'Date',            type: 'date' },
+    { key: 'payment_method', label: 'Payment Method',  type: 'string' },
+    { key: 'order_count',    label: 'Orders',          type: 'number', total: 'sum' },
+    { key: 'total_settled',  label: 'Total Settled',   type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
@@ -401,28 +507,35 @@ export const opticalDailySettlementSumReport: ReportDefinition = {
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        DATE(p.created_at) as "date",
-        p.payment_method as "payment_method",
-        SUM(p.amount) as "total_settled"
-      FROM "payments" p
-      JOIN "invoices" i ON p.invoice_id = i.id
-      WHERE i."organizationId" = ${orgId}
-        AND EXISTS (SELECT 1 FROM "invoice_items" ii WHERE ii.invoice_id = i.id AND ii.department ILIKE '%Optical%')
+      SELECT
+        DATE(p.created_at)                                 AS "date",
+        p.payment_method                                   AS "payment_method",
+        COUNT(DISTINCT oo.id)                              AS "order_count",
+        SUM(p.amount)                                      AS "total_settled"
+      FROM "optical_orders" oo
+      JOIN "invoices"  i  ON oo.invoice_id = i.id
+      JOIN "payments"  p  ON p.invoice_id  = i.id
+      WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
         AND p.created_at >= ${new Date(date_start)}
         AND p.created_at <= ${new Date(date_end)}
       GROUP BY DATE(p.created_at), p.payment_method
-      ORDER BY DATE(p.created_at) DESC
+      ORDER BY DATE(p.created_at) DESC, SUM(p.amount) DESC
     `;
+
     const totals = rows.reduce((acc, row) => {
+      acc.order_count   += Number(row.order_count   || 0);
       acc.total_settled += Number(row.total_settled || 0);
       return acc;
-    }, { total_settled: 0 });
+    }, { order_count: 0, total_settled: 0 });
 
-    return { 
-      rows: rows.map(r => ({ ...r, total_settled: Number(r.total_settled) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        order_count:   Number(r.order_count   || 0),
+        total_settled: Number(r.total_settled || 0),
+      })),
+      totals,
     };
   },
 };
@@ -431,48 +544,70 @@ export const opticalPaymentReport: ReportDefinition = {
   id: 'optical-payment',
   category: ReportCategory.Optical,
   name: 'Optical - Optical Payment Report',
-  description: 'Balance and payment overview for all Optical invoices.',
+  description: 'Order-level payment status showing billed amount, collections, and balance due.',
   filters: defaultFilters,
   columns: [
-    { key: 'patient_id', label: 'Patient ID', type: 'string' },
-    { key: 'invoice_number', label: 'Invoice No', type: 'string' },
-    { key: 'billed_amount', label: 'Billed Amount', type: 'currency', total: 'sum' },
-    { key: 'paid_amount', label: 'Paid Amount', type: 'currency', total: 'sum' },
-    { key: 'balance_due', label: 'Balance Due', type: 'currency', total: 'sum' },
-    { key: 'last_payment_method', label: 'Payment Mode', type: 'string' },
+    { key: 'order_date',          label: 'Order Date',      type: 'date' },
+    { key: 'order_number',        label: 'Order No',         type: 'string' },
+    { key: 'patient_id',          label: 'Patient ID',       type: 'string' },
+    { key: 'status',              label: 'Order Status',     type: 'string' },
+    { key: 'billed_amount',       label: 'Billed Amount',    type: 'currency', total: 'sum' },
+    { key: 'advance_paid',        label: 'Advance Paid',     type: 'currency', total: 'sum' },
+    { key: 'balance_due',         label: 'Balance Due',      type: 'currency', total: 'sum' },
+    { key: 'last_payment_method', label: 'Payment Mode',     type: 'string' },
   ],
-  defaultSort: { column: 'billed_amount', direction: 'desc' },
+  defaultSort: { column: 'order_date', direction: 'desc' },
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // The source of truth for billing figures is OpticalOrder itself
+    // (total_amount, advance_paid, balance_due are maintained by the app).
+    // The last payment method is derived from the linked invoice → payments.
+    // We use MAX(p.payment_method) as a stable aggregate to pick the most
+    // recent non-null payment method without a subquery.
     const rows = await prisma.$queryRaw<any[]>`
-      SELECT 
-        i.patient_id as "patient_id",
-        i.invoice_number as "invoice_number",
-        i.net_amount as "billed_amount",
-        i.paid_amount as "paid_amount",
-        i.balance_due as "balance_due",
-        MAX(p.payment_method) as "last_payment_method"
-      FROM "invoices" i
-      LEFT JOIN "payments" p ON p.invoice_id = i.id AND p.status = 'Completed'
-      WHERE i."organizationId" = ${orgId}
-        AND EXISTS (SELECT 1 FROM "invoice_items" ii WHERE ii.invoice_id = i.id AND ii.department ILIKE '%Optical%')
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
-      GROUP BY i.patient_id, i.invoice_number, i.net_amount, i.paid_amount, i.balance_due, i.created_at
-      ORDER BY i.created_at DESC
+      SELECT
+        DATE(oo.order_date)                                AS "order_date",
+        oo.order_number                                    AS "order_number",
+        oo.patient_id                                      AS "patient_id",
+        oo.status                                          AS "status",
+        oo.total_amount                                    AS "billed_amount",
+        oo.advance_paid                                    AS "advance_paid",
+        oo.balance_due                                     AS "balance_due",
+        COALESCE(
+          (
+            SELECT p2.payment_method
+            FROM   "payments" p2
+            WHERE  p2.invoice_id = oo.invoice_id
+              AND  p2.status = 'Completed'
+            ORDER  BY p2.created_at DESC
+            LIMIT  1
+          ),
+          '—'
+        )                                                  AS "last_payment_method"
+      FROM "optical_orders" oo
+      WHERE oo."organizationId" = ${orgId}
+        AND oo.order_date >= ${new Date(date_start)}
+        AND oo.order_date <= ${new Date(date_end)}
+      ORDER BY oo.order_date DESC
     `;
+
     const totals = rows.reduce((acc, row) => {
       acc.billed_amount += Number(row.billed_amount || 0);
-      acc.paid_amount += Number(row.paid_amount || 0);
-      acc.balance_due += Number(row.balance_due || 0);
+      acc.advance_paid  += Number(row.advance_paid  || 0);
+      acc.balance_due   += Number(row.balance_due   || 0);
       return acc;
-    }, { billed_amount: 0, paid_amount: 0, balance_due: 0 });
+    }, { billed_amount: 0, advance_paid: 0, balance_due: 0 });
 
-    return { 
-      rows: rows.map(r => ({ ...r, billed_amount: Number(r.billed_amount), paid_amount: Number(r.paid_amount), balance_due: Number(r.balance_due) })), 
-      totals 
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        billed_amount: Number(r.billed_amount || 0),
+        advance_paid:  Number(r.advance_paid  || 0),
+        balance_due:   Number(r.balance_due   || 0),
+      })),
+      totals,
     };
   },
 };

@@ -146,6 +146,11 @@ export const appointmentReport: ReportDefinition = {
     doctor_id: z.string().optional(),
     status: z.string().optional(),
   }),
+  filterSpec: {
+    showDoctor: true,
+    showStatus: true,
+    statusOptions: ['Pending', 'Scheduled', 'COMPLETED', 'NO_SHOW', 'Cancelled'],
+  },
   columns: [
     { key: 'appointment_date', label: 'Appointment Date', type: 'date' },
     { key: 'appointment_time', label: 'Time', type: 'string' },
@@ -156,17 +161,6 @@ export const appointmentReport: ReportDefinition = {
   ],
   defaultSort: { column: 'appointment_date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
-    "showDoctor": true,
-    "showStatus": true,
-    "statusOptions": [
-      "Pending",
-      "Scheduled",
-      "COMPLETED",
-      "NO_SHOW",
-      "Cancelled"
-    ]
-  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id, status } = filters;
@@ -202,6 +196,7 @@ export const doctorEventOffReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     doctor_id: z.string().optional(),
   }),
+  filterSpec: { showDoctor: true },
   columns: [
     { key: 'event_date', label: 'Date', type: 'date' },
     { key: 'doctor_name', label: 'Doctor Name', type: 'string' },
@@ -211,9 +206,6 @@ export const doctorEventOffReport: ReportDefinition = {
   ],
   defaultSort: { column: 'event_date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
-    "showDoctor": true
-  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id } = filters;
@@ -247,6 +239,7 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     department_id: z.string().optional(),
   }),
+  filterSpec: { showDepartment: true },
   columns: [
     { key: 'doctor_name', label: 'Doctor Name', type: 'string' },
     { key: 'department', label: 'Department', type: 'string' },
@@ -255,9 +248,6 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
   ],
   defaultSort: { column: 'total_events', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
-    "showDepartment": true
-  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, department_id } = filters;
@@ -401,6 +391,8 @@ export const ipPatientReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     ward_id: z.string().optional(),
   }),
+  // D4 Directive: showWard added — filtering by ward is the primary use-case for this report.
+  filterSpec: { showWard: true },
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'ip_number', label: 'IP Number', type: 'string' },
@@ -533,6 +525,12 @@ export const ipDischargeReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     discharge_type: z.string().optional(),
   }),
+  // D4 Directive: showStatus added — discharge_type (Normal | LAMA | DAMA | Absconded | Death | Transfer)
+  // maps naturally to a status dropdown in the filter engine.
+  filterSpec: {
+    showStatus: true,
+    statusOptions: ['Normal', 'LAMA', 'DAMA', 'Absconded', 'Death', 'Transfer'],
+  },
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'discharge_date', label: 'Discharge Date', type: 'date' },
@@ -628,6 +626,8 @@ export const bedStatusReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     ward_id: z.string().optional(),
   }),
+  // D4 Directive: showWard added — bed status is most actionable when scoped to a single ward.
+  filterSpec: { showWard: true },
   columns: [
     { key: 'bed_id', label: 'Bed ID', type: 'string' },
     { key: 'bed_name', label: 'Bed Name', type: 'string' },
@@ -672,6 +672,8 @@ export const admissionsListReport: ReportDefinition = {
     date_end: z.string().or(z.date()),
     ward_id: z.string().optional(),
   }),
+  // D4 Directive: showWard added — ward filtering is the primary drill-down for admissions list.
+  filterSpec: { showWard: true },
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'ip_number', label: 'IP Number', type: 'string' },
@@ -725,6 +727,9 @@ export const emergencyAdmissionsReport: ReportDefinition = {
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
   }),
+  // D4 Directive: showDepartment added — ER managers typically want to see admissions
+  // routed to specific departments for capacity planning.
+  filterSpec: { showDepartment: true },
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'ip_number', label: 'IP Number', type: 'string' },
@@ -890,6 +895,8 @@ export const bedTransferReport: ReportDefinition = {
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: BedTransfer model (L2025) — fields: admission_id, from_bed_id, to_bed_id, reason, transferred_by.
+    // from_bed_id and to_bed_id are String? (bed_id FK), not Int.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(bt.created_at) as "transfer_date",
@@ -935,7 +942,14 @@ export const doctorTransferReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    // We infer doctor transfer if doctor_name (admitting) != doc.name (attending)
+    // BUG FIX (D4 Directive): The previous implementation was missing date_start / date_end
+    // filters entirely in the WHERE clause. The filters object was destructured but the
+    // date parameters were never applied, causing the query to return ALL records across
+    // all time regardless of the date range selected by the user.
+    //
+    // Fix: Extract date_start and date_end from filters and apply them as date range
+    // predicates on adm.admission_date.
+    const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT
         DATE(adm.admission_date) as "admission_date",
@@ -949,6 +963,8 @@ export const doctorTransferReport: ReportDefinition = {
       LEFT JOIN "users" doc ON adm.attending_doctor_id = doc.id
       LEFT JOIN "wards" w ON adm.ward_id = w.ward_id
       WHERE adm."organizationId" = ${orgId}
+        AND adm.admission_date >= ${new Date(date_start)}
+        AND adm.admission_date <= ${new Date(date_end)}
         AND adm.doctor_name IS NOT NULL 
         AND doc.name IS NOT NULL
         AND adm.doctor_name != doc.name
@@ -981,6 +997,9 @@ export const expiredPatientsReport: ReportDefinition = {
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: admissions.is_death (Boolean, L1004), discharge_type (String?, L1033)
+    // We match on is_death = true OR discharge_type = 'Death' OR status = 'Expired'
+    // for broad compatibility (different workflows may set different flags).
     const rows = await prisma.$queryRaw<any[]>`
       SELECT
         DATE(adm.discharge_date) as "death_date",
@@ -1018,6 +1037,13 @@ export const counsellingSummaryReport: ReportDefinition = {
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
   }),
+  // D4 Directive: showStatus added — session_type (General, Financial, Pre-Surgery, Discharge,
+  // Psychological) and status (Requested, Draft, Confirmed, Completed, Cancelled) are key
+  // filters for counselling managers.
+  filterSpec: {
+    showStatus: true,
+    statusOptions: ['Requested', 'Draft', 'Confirmed', 'Completed', 'Cancelled'],
+  },
   columns: [
     { key: 'counselling_date', label: 'Counselling Date', type: 'date' },
     { key: 'session_number', label: 'Session Number', type: 'string' },
@@ -1032,6 +1058,10 @@ export const counsellingSummaryReport: ReportDefinition = {
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: CounsellingSession model (L4742) — confirmed exists.
+    // Fields: session_number, patient_id, counsellor_name, session_type, status, outcome.
+    // session_type default is 'General' (L4749) but report should return ALL types.
+    // Joined to OPD_REG for patient name (patient_id is a String FK to OPD_REG.patient_id).
     const rows = await prisma.$queryRaw<any[]>`
       SELECT
         DATE(c.created_at) as "counselling_date",
@@ -1078,6 +1108,10 @@ export const dischargeTatReport: ReportDefinition = {
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: DischargeClearance model (L4694) — fields: pharmacy, lab, finance,
+    // nursing, doctor (all String with Pending/Cleared/Waived values), all_cleared (Boolean).
+    // There is no direct admission_id FK on DischargeClearance to admissions via @relation,
+    // but admission_id (String) is stored and can be used for JOIN.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT
         DATE(dc.created_at) as "discharge_initiation_date",
@@ -1101,4 +1135,3 @@ export const dischargeTatReport: ReportDefinition = {
     return { rows, totals: {} };
   },
 };
-

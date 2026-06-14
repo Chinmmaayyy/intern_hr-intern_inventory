@@ -7,7 +7,7 @@ import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
 export const dailyRevenueReport: ReportDefinition = {
   id: 'billing-revenue-daily',
-  category: ReportCategory.Daily_Revenue,
+  category: ReportCategory.Revenue,
   name: 'Daily Revenue by Doctor & Department',
   description: 'Shows daily billed and collected amounts grouped by doctor and department.',
   filters: z.object({
@@ -27,13 +27,66 @@ export const dailyRevenueReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
+  filterSpec: {
     "showDepartment": true
   },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id, department_id } = filters;
 
+    const start = new Date(date_start);
+    const end = new Date(date_end);
+    const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+
+    // ── Phase E3 Optimisation ─────────────────────────────────────────────────
+    // Decision boundary: > 7 days → read from pre-aggregated rollup table.
+    //                    ≤ 7 days → read from live transactional tables (real-time).
+    //
+    // The rollup table (mis_daily_billing_rollups) is keyed on:
+    //   (organizationId, report_date, department, payer_type)
+    // It does NOT store per-doctor granularity — only per-department.
+    // For long-range summary views this is the correct trade-off (the UI shows
+    // department-level trends; individual doctor drill-down uses billingDetailReport).
+    if (rangeDays > 7) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT
+          r.report_date                        AS "date",
+          r.department                         AS "department",
+          '—'                                  AS "doctor_name",
+          r.payer_type                         AS "payer_type",
+          r.total_billed                       AS "billed_amount",
+          r.total_collected                    AS "collected_amount",
+          r.invoice_count                      AS "invoice_count"
+        FROM "mis_daily_billing_rollups" r
+        WHERE r."organizationId" = ${orgId}
+          AND r.report_date >= ${start}
+          AND r.report_date <= ${end}
+          ${department_id ? Prisma.sql`AND r.department = ${department_id}` : Prisma.empty}
+        ORDER BY r.report_date DESC, r.department, r.payer_type
+      `;
+
+      const totals = rows.reduce(
+        (acc, row) => {
+          acc.billed_amount += Number(row.billed_amount || 0);
+          acc.collected_amount += Number(row.collected_amount || 0);
+          acc.invoice_count += Number(row.invoice_count || 0);
+          return acc;
+        },
+        { billed_amount: 0, collected_amount: 0, invoice_count: 0 }
+      );
+
+      return {
+        rows: rows.map(row => ({
+          ...row,
+          billed_amount: Number(row.billed_amount),
+          collected_amount: Number(row.collected_amount),
+          invoice_count: Number(row.invoice_count),
+        })),
+        totals,
+      };
+    }
+
+    // ── Live path (≤ 7 days) — real-time accuracy from transactional tables ───
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(i.created_at) as "date",
@@ -48,8 +101,8 @@ export const dailyRevenueReport: ReportDefinition = {
       LEFT JOIN payments p ON p.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${start}
+        AND i.created_at <= ${end}
         ${department_id ? Prisma.sql`AND (u.department = ${department_id} OR u.specialty = ${department_id})` : Prisma.empty}
       GROUP BY 
         DATE(i.created_at),
@@ -80,6 +133,7 @@ export const dailyRevenueReport: ReportDefinition = {
     return { rows: serializedRows, totals };
   },
 };
+
 
 export const billingDetailReport: ReportDefinition = {
   id: 'billing-detail',
@@ -490,7 +544,7 @@ export const billingAdmissionAdvanceReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
+  filterSpec: {
     "showDepartment": true
   },
   requiredPermission: 'mis_reports.billing.view',
@@ -737,7 +791,7 @@ export const billingOpRefundReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
+  filterSpec: {
     "showDepartment": true
   },
   requiredPermission: 'mis_reports.billing.view',
@@ -877,7 +931,7 @@ export const billingDoctorPayoutReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
+  filterSpec: {
     "showDoctor": true
   },
   requiredPermission: 'mis_reports.billing.admin',  // Doctor payroll data — finance/admin only

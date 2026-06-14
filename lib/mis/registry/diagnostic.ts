@@ -57,7 +57,7 @@ export const diagCardiologyAppointmentReport: ReportDefinition = {
 export const diagNeurologyAppointmentReport: ReportDefinition = {
   id: 'diagnostic-neurology-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Neurology Appointment',
+  name: 'Diagnostic - Neurology Appointment',
   description: 'Details of all neurology diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,
@@ -70,7 +70,7 @@ export const diagNeurologyAppointmentReport: ReportDefinition = {
 export const diagNuclearMedicineAppointmentReport: ReportDefinition = {
   id: 'diagnostic-nuclear-medicine-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Nuclear Medicine Appointment',
+  name: 'Diagnostic - Nuclear Medicine Appointment',
   description: 'Details of all nuclear medicine diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,
@@ -83,7 +83,7 @@ export const diagNuclearMedicineAppointmentReport: ReportDefinition = {
 export const diagPathologyAppointmentReport: ReportDefinition = {
   id: 'diagnostic-pathology-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Pathology Appointment',
+  name: 'Diagnostic - Pathology Appointment',
   description: 'Details of all pathology diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,
@@ -96,7 +96,7 @@ export const diagPathologyAppointmentReport: ReportDefinition = {
 export const diagPulmonologyAppointmentReport: ReportDefinition = {
   id: 'diagnostic-pulmonology-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Pulmonology Appointment',
+  name: 'Diagnostic - Pulmonology Appointment',
   description: 'Details of all pulmonology diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,
@@ -109,7 +109,7 @@ export const diagPulmonologyAppointmentReport: ReportDefinition = {
 export const diagRadiologyAppointmentReport: ReportDefinition = {
   id: 'diagnostic-radiology-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Radiology Appointment',
+  name: 'Diagnostic - Radiology Appointment',
   description: 'Details of all radiology diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,
@@ -155,7 +155,7 @@ const diagnosticServiceColumns = [
 export const diagCardiologyServiceReport: ReportDefinition = {
   id: 'diagnostic-cardiology-service',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Cardiology Service',
+  name: 'Diagnostic - Cardiology Service',
   description: 'Details of cardiology services and tests ordered.',
   filters: defaultFilters,
   columns: diagnosticServiceColumns,
@@ -168,7 +168,7 @@ export const diagCardiologyServiceReport: ReportDefinition = {
 export const diagNeurologyServiceReport: ReportDefinition = {
   id: 'diagnostic-neurology-service',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Neurology Service',
+  name: 'Diagnostic - Neurology Service',
   description: 'Details of neurology services and tests ordered.',
   filters: defaultFilters,
   columns: diagnosticServiceColumns,
@@ -181,7 +181,7 @@ export const diagNeurologyServiceReport: ReportDefinition = {
 export const diagPulmonologyServiceReport: ReportDefinition = {
   id: 'diagnostic-pulmonology-service',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Pulmonology Service',
+  name: 'Diagnostic - Pulmonology Service',
   description: 'Details of pulmonology services and tests ordered.',
   filters: defaultFilters,
   columns: diagnosticServiceColumns,
@@ -194,7 +194,7 @@ export const diagPulmonologyServiceReport: ReportDefinition = {
 export const diagPathologyServiceReport: ReportDefinition = {
   id: 'diagnostic-pathology-service',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Pathology Service',
+  name: 'Diagnostic - Pathology Service',
   description: 'Details of pathology services and tests ordered.',
   filters: defaultFilters,
   columns: diagnosticServiceColumns,
@@ -202,6 +202,27 @@ export const diagPathologyServiceReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.diagnostic.view',
   queryFn: createDiagnosticServiceQuery('Pathology'),
+};
+
+// ─── Phase D2: Missing Radiology Service Report ───────────────────────────
+//
+// Gap Analysis §3.4 identified this as missing from the registry.
+// The PRD lists a Radiology Service report (SN ~43) alongside Pathology
+// Service. The existing Radiology TAT report covers completed orders only;
+// this report covers ALL radiology lab_orders regardless of status,
+// mirroring diagPathologyServiceReport exactly but filtered by 'Radiology'.
+
+export const diagRadiologyServiceReport: ReportDefinition = {
+  id: 'diagnostic-radiology-service',
+  category: ReportCategory.Diagnostic,
+  name: 'Diagnostic - Radiology Service',
+  description: 'Details of all radiology services and imaging tests ordered — MRI, CT, X-Ray, Ultrasound, etc.',
+  filters: defaultFilters,
+  columns: diagnosticServiceColumns,
+  defaultSort: { column: 'order_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.diagnostic.view',
+  queryFn: createDiagnosticServiceQuery('Radiology'),
 };
 
 // TAT Queries
@@ -257,7 +278,7 @@ const createTatQuery = (departmentKeyword: string) => async (filters: ValidatedF
 export const diagTatReport: ReportDefinition = {
   id: 'diagnostic-tat-report',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - TAT Report',
+  name: 'Diagnostic - TAT Report',
   description: 'Overall Turn-Around-Time report for all completed diagnostic services.',
   filters: defaultFilters,
   columns: diagnosticTatColumns,
@@ -270,7 +291,7 @@ export const diagTatReport: ReportDefinition = {
 export const diagPathologyTatReport: ReportDefinition = {
   id: 'diagnostic-pathology-tat-report',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Pathology TAT Report',
+  name: 'Diagnostic - Pathology TAT Report',
   description: 'Turn-Around-Time report for completed pathology services.',
   filters: defaultFilters,
   columns: diagnosticTatColumns,
@@ -283,7 +304,7 @@ export const diagPathologyTatReport: ReportDefinition = {
 export const diagRadiologyTatReport: ReportDefinition = {
   id: 'diagnostic-radiology-tat-report',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Radiology TAT Report',
+  name: 'Diagnostic - Radiology TAT Report',
   description: 'Turn-Around-Time report for completed radiology services.',
   filters: defaultFilters,
   columns: diagnosticTatColumns,

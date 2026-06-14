@@ -75,7 +75,8 @@ import {
   diagPathologyServiceReport,
   diagTatReport,
   diagPathologyTatReport,
-  diagRadiologyTatReport
+  diagRadiologyTatReport,
+  diagRadiologyServiceReport
 } from './registry/diagnostic';
 import {
   pharmacyIpIssueReport,
@@ -96,7 +97,13 @@ import {
   pharmacyDoctorWiseSaleReport,
   pharmacyPatientPullOffReport,
   pharmacyDoctorPullOffReport,
-  pharmacyIpPullOffReport
+  pharmacyIpPullOffReport,
+  pharmacyOpSummaryReport,
+  pharmacyOpSaleDetailReport,
+  pharmacyOpReturnDetailReport,
+  pharmacyHsnSummaryReport,
+  pharmacySettlementReport,
+  pharmacyDoctorWiseDetailReport
 } from './registry/pharmacy';
 import {
   inventoryStockReport,
@@ -246,6 +253,13 @@ export const REGISTRY: Record<string, ReportDefinition> = {
   [opticalDailySettlementReport.id]: opticalDailySettlementReport,
   [opticalDailySettlementSumReport.id]: opticalDailySettlementSumReport,
   [opticalPaymentReport.id]: opticalPaymentReport,
+  [pharmacyOpSummaryReport.id]: pharmacyOpSummaryReport,
+  [pharmacyOpSaleDetailReport.id]: pharmacyOpSaleDetailReport,
+  [pharmacyOpReturnDetailReport.id]: pharmacyOpReturnDetailReport,
+  [pharmacyHsnSummaryReport.id]: pharmacyHsnSummaryReport,
+  [pharmacySettlementReport.id]: pharmacySettlementReport,
+  [pharmacyDoctorWiseDetailReport.id]: pharmacyDoctorWiseDetailReport,
+  [diagRadiologyServiceReport.id]: diagRadiologyServiceReport,
 };
 
 export async function runReport(
@@ -320,12 +334,12 @@ export async function runReport(
       // The previous runner used 'JSON' here, which was incorrect.
       const job = await prisma.reportJob.create({
         data: {
-          report_id:      reportId,
-          filters_json:   filters as Prisma.InputJsonValue,
-          requested_by:   userId,
+          report_id: reportId,
+          filters_json: filters as Prisma.InputJsonValue,
+          requested_by: userId,
           organizationId: orgId,
-          format:         'Excel',
-          status:         'Queued',
+          format: 'Excel',
+          status: 'Queued',
         },
       });
 
@@ -358,11 +372,11 @@ export async function runReport(
   // 4. Log access
   await prisma.reportAccessLog.create({
     data: {
-      user_id:      userId,
-      report_id:    reportId,
+      user_id: userId,
+      report_id: reportId,
       filters_json: filters as Prisma.InputJsonValue,
-      row_count:    rows.length,
-      action:       'MIS_GENERATE',
+      row_count: rows.length,
+      action: 'MIS_GENERATE',
       organizationId: orgId,
     },
   });
@@ -373,8 +387,8 @@ export async function runReport(
     totals,
     meta: {
       generatedAt: new Date(),
-      reportName:  reportDef.name,
-      rowCount:    rows.length,
+      reportName: reportDef.name,
+      rowCount: rows.length,
     },
   };
 }

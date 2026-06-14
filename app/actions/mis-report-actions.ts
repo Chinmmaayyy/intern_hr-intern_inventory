@@ -100,7 +100,8 @@ import {
   diagPathologyServiceReport,
   diagTatReport,
   diagPathologyTatReport,
-  diagRadiologyTatReport
+  diagRadiologyTatReport,
+  diagRadiologyServiceReport
 } from '@/lib/mis/registry/diagnostic';
 import {
   pharmacyIpIssueReport,
@@ -121,7 +122,13 @@ import {
   pharmacyDoctorWiseSaleReport,
   pharmacyPatientPullOffReport,
   pharmacyDoctorPullOffReport,
-  pharmacyIpPullOffReport
+  pharmacyIpPullOffReport,
+  pharmacyOpSummaryReport,
+  pharmacyOpSaleDetailReport,
+  pharmacyOpReturnDetailReport,
+  pharmacyHsnSummaryReport,
+  pharmacySettlementReport,
+  pharmacyDoctorWiseDetailReport
 } from '@/lib/mis/registry/pharmacy';
 import {
   inventoryStockReport,
@@ -176,7 +183,7 @@ import { getSession as getRealSession } from '@/app/lib/session';
 
 async function getSession() {
   const session = await getRealSession();
-  
+
   if (!session) {
     throw new Error('UNAUTHORIZED');
   }
@@ -194,6 +201,7 @@ export async function listCatalogue() {
   const session = await getSession();
 
   const allReports = [
+    dailyRevenueReport,
     billingDetailReport,
     billingItemDetailReport,
     billingSummaryReport,
@@ -305,7 +313,14 @@ export async function listCatalogue() {
     opticalProductBillingReport,
     opticalDailySettlementReport,
     opticalDailySettlementSumReport,
-    opticalPaymentReport
+    opticalPaymentReport,
+    pharmacyOpSummaryReport,
+    pharmacyOpSaleDetailReport,
+    pharmacyOpReturnDetailReport,
+    pharmacyHsnSummaryReport,
+    pharmacySettlementReport,
+    pharmacyDoctorWiseDetailReport,
+    diagRadiologyServiceReport
   ];
 
   // Only surface reports the session's role can actually run.
@@ -395,7 +410,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   if (
     !job ||
     job.organizationId !== session.orgId ||
-    job.requested_by   !== session.userId
+    job.requested_by !== session.userId
   ) {
     throw new Error('Job not found');
   }
@@ -416,14 +431,14 @@ export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
     job.expires_at < new Date();
 
   return {
-    id:          job.id,
-    status:      isExpired ? 'Expired' : job.status,
-    progress:    job.progress,
-    file_key:    isExpired ? null : job.file_key,  // do not return a dead URL
-    error:       isExpired
-                   ? 'This export has expired. Please regenerate the report.'
-                   : job.error,
-    createdAt:   job.createdAt,
+    id: job.id,
+    status: isExpired ? 'Expired' : job.status,
+    progress: job.progress,
+    file_key: isExpired ? null : job.file_key,  // do not return a dead URL
+    error: isExpired
+      ? 'This export has expired. Please regenerate the report.'
+      : job.error,
+    createdAt: job.createdAt,
     finished_at: job.finished_at,
   };
 }
@@ -448,7 +463,7 @@ export async function listJobs(): Promise<JobStatusResponse[]> {
   const jobs = await prisma.reportJob.findMany({
     where: {
       organizationId: session.orgId,
-      requested_by:   session.userId,
+      requested_by: session.userId,
       OR: [
         { status: { not: 'Completed' } },                         // (a) non-terminal
         { status: 'Completed', expires_at: null },                // (b-i) completed, no expiry
@@ -456,16 +471,16 @@ export async function listJobs(): Promise<JobStatusResponse[]> {
       ],
     },
     orderBy: { createdAt: 'desc' },
-    take:    20,
+    take: 20,
   });
 
   return jobs.map((job) => ({
-    id:          job.id,
-    status:      job.status,
-    progress:    job.progress,
-    file_key:    job.file_key,
-    error:       job.error,
-    createdAt:   job.createdAt,
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    file_key: job.file_key,
+    error: job.error,
+    createdAt: job.createdAt,
     finished_at: job.finished_at,
   }));
 }
@@ -548,12 +563,12 @@ export async function exportReportToExcel(
 
   // 5. Build a safe, date-stamped filename.
   const dateSuffix = new Date().toISOString().split('T')[0];
-  const safeName   = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
+  const safeName = reportDef.name.replace(/[^a-zA-Z0-9]+/g, '_');
 
   // 6. Return Base64 — safe for Server Action serialisation.
   return {
-    async:    false,
-    base64:   buffer.toString('base64'),
+    async: false,
+    base64: buffer.toString('base64'),
     filename: `${safeName}_${dateSuffix}.xlsx`,
   };
 }
@@ -673,7 +688,7 @@ export async function saveSchedule(data: {
   channel: string;
 }) {
   const session = await getSession();
-  
+
   // Calculate first run
   const cronParser = require('cron-parser');
   const parseCron = cronParser.parseExpression || (cronParser.default && cronParser.default.parse) || cronParser.parse;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
@@ -8,6 +9,12 @@ const defaultFilters = z.object({
   date_end: z.string().or(z.date()),
 });
 
+const defaultFiltersWithStore = z.object({
+  date_start: z.string().or(z.date()),
+  date_end: z.string().or(z.date()),
+  store_id: z.string().optional(),
+});
+
 // ─── Batch 17: Inventory — Stock & GRN Core (SN 83–86) ────────
 
 export const inventoryStockReport: ReportDefinition = {
@@ -15,7 +22,11 @@ export const inventoryStockReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Inventory Stock',
   description: 'Aggregated stock valuation and items count across all stores.',
-  filters: z.object({}), // Snapshot report
+  filters: z.object({
+    store_id: z.string().optional(),
+  }),
+  // D3 Directive: showStore added — user needs store dropdown to filter aggregate per-store.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'store_name', label: 'Store Name', type: 'string' },
     { key: 'total_items', label: 'Total Unique Items', type: 'number' },
@@ -26,16 +37,18 @@ export const inventoryStockReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         s.name as "store_name",
-        COUNT(ss.item_id) as "total_items",
+        COUNT(DISTINCT ss.item_id) as "total_items",
         SUM(ss.quantity_on_hand) as "total_stock",
         SUM(ss.quantity_on_hand * ss.avg_unit_cost) as "total_value"
       FROM "store_stocks" ss
       JOIN "stores" s ON ss.store_id = s.id
       WHERE ss."organizationId" = ${orgId}
-      GROUP BY s.name
+        ${store_id ? Prisma.sql`AND ss.store_id = ${parseInt(store_id)}` : Prisma.empty}
+      GROUP BY s.id, s.name
       ORDER BY s.name ASC
     `;
     return { 
@@ -55,11 +68,16 @@ export const inventoryItemWiseStockReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Item Wise Stock',
   description: 'Total aggregate stock and value across the organization grouped by item.',
-  filters: z.object({}), // Snapshot report
+  filters: z.object({
+    store_id: z.string().optional(),
+  }),
+  // D3 Directive: showStore added — item-wise stock is most useful when filtered to a single store.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'item_code', label: 'Item Code', type: 'string' },
     { key: 'item_name', label: 'Item Name', type: 'string' },
     { key: 'item_type', label: 'Item Type', type: 'string' },
+    { key: 'store_name', label: 'Store', type: 'string' },
     { key: 'total_stock', label: 'Total Quantity on Hand', type: 'number' },
     { key: 'total_value', label: 'Total Stock Value', type: 'currency' },
   ],
@@ -67,17 +85,21 @@ export const inventoryItemWiseStockReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         i.name as "item_name",
         i.item_code as "item_code",
         i.item_type as "item_type",
+        s.name as "store_name",
         SUM(ss.quantity_on_hand) as "total_stock",
         SUM(ss.quantity_on_hand * ss.avg_unit_cost) as "total_value"
       FROM "store_stocks" ss
       JOIN "item_master" i ON ss.item_id = i.id
+      JOIN "stores" s ON ss.store_id = s.id
       WHERE ss."organizationId" = ${orgId}
-      GROUP BY i.name, i.item_code, i.item_type
+        ${store_id ? Prisma.sql`AND ss.store_id = ${parseInt(store_id)}` : Prisma.empty}
+      GROUP BY i.name, i.item_code, i.item_type, s.name
       ORDER BY i.name ASC
     `;
     return { 
@@ -109,15 +131,18 @@ export const inventoryGrnSummaryReport: ReportDefinition = {
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // total_rejected aggregated from item level (goods_receipt_note_items.quantity_rejected)
+    // for accuracy — the GRN header's rejected_quantity field is a denormalised summary only.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(g.received_at) as "grn_date",
         v.vendor_name as "vendor_name",
-        COUNT(g.id) as "total_grns",
+        COUNT(DISTINCT g.id) as "total_grns",
         SUM(g.total_amount) as "total_amount",
-        SUM(g.rejected_quantity) as "total_rejected"
+        SUM(gi.quantity_rejected) as "total_rejected"
       FROM "goods_receipt_notes" g
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
+      LEFT JOIN "goods_receipt_note_items" gi ON gi.grn_id = g.id
       WHERE g."organizationId" = ${orgId}
         AND g.received_at >= ${new Date(date_start)}
         AND g.received_at <= ${new Date(date_end)}
@@ -153,16 +178,19 @@ export const inventoryGrnReturnSummaryReport: ReportDefinition = {
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: rejection data lives on goods_receipt_note_items (schema L5563-5564).
+    // "Return events" = count of distinct GRN-item lines that had any rejection.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(g.received_at) as "return_date",
         v.vendor_name as "vendor_name",
-        COUNT(g.id) as "total_returns",
-        SUM(g.rejected_quantity) as "total_rejected_qty"
-      FROM "goods_receipt_notes" g
+        COUNT(gi.id) as "total_returns",
+        SUM(gi.quantity_rejected) as "total_rejected_qty"
+      FROM "goods_receipt_note_items" gi
+      JOIN "goods_receipt_notes" g ON gi.grn_id = g.id
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       WHERE g."organizationId" = ${orgId}
-        AND g.rejected_quantity > 0
+        AND gi.quantity_rejected > 0
         AND g.received_at >= ${new Date(date_start)}
         AND g.received_at <= ${new Date(date_end)}
       GROUP BY DATE(g.received_at), v.vendor_name
@@ -186,7 +214,7 @@ export const inventoryItemMasterReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Item Master',
   description: 'Master list of all registered inventory items and their properties.',
-  filters: z.object({}), // Master list
+  filters: z.object({}), // Master list — no date range required
   columns: [
     { key: 'item_code', label: 'Item Code', type: 'string' },
     { key: 'item_name', label: 'Item Name', type: 'string' },
@@ -196,6 +224,8 @@ export const inventoryItemMasterReport: ReportDefinition = {
     { key: 'mrp', label: 'MRP', type: 'currency' },
     { key: 'is_batch_tracked', label: 'Batch Tracked', type: 'string' },
     { key: 'is_expiry_tracked', label: 'Expiry Tracked', type: 'string' },
+    { key: 'reorder_point', label: 'Reorder Point', type: 'number' },
+    { key: 'status', label: 'Status', type: 'string' },
   ],
   defaultSort: { column: 'item_name', direction: 'asc' },
   rowLimitSync: 5000,
@@ -209,8 +239,10 @@ export const inventoryItemMasterReport: ReportDefinition = {
         i.base_uom as "base_uom",
         i.std_purchase_price as "std_purchase_price",
         i.mrp as "mrp",
-        i.is_batch_tracked as "is_batch_tracked",
-        i.is_expiry_tracked as "is_expiry_tracked"
+        CASE WHEN i.is_batch_tracked THEN 'Yes' ELSE 'No' END as "is_batch_tracked",
+        CASE WHEN i.is_expiry_tracked THEN 'Yes' ELSE 'No' END as "is_expiry_tracked",
+        i.reorder_point as "reorder_point",
+        i.status as "status"
       FROM "item_master" i
       WHERE i."organizationId" = ${orgId}
       ORDER BY i.name ASC
@@ -220,6 +252,7 @@ export const inventoryItemMasterReport: ReportDefinition = {
         ...r,
         std_purchase_price: Number(r.std_purchase_price || 0),
         mrp: Number(r.mrp || 0),
+        reorder_point: Number(r.reorder_point || 0),
       })), 
       totals: {} 
     };
@@ -298,6 +331,9 @@ export const inventoryGrnReturnDetailReport: ReportDefinition = {
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Schema truth: rejection data lives on goods_receipt_note_items (schema L5563-5564).
+    // The GRN header also has a denormalised rejection_reason (schema L1918) but it is not
+    // per-item granular. Always query at the item level for accurate detail reports.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(g.received_at) as "return_date",
@@ -305,7 +341,7 @@ export const inventoryGrnReturnDetailReport: ReportDefinition = {
         v.vendor_name as "vendor_name",
         i.name as "item_name",
         gi.quantity_rejected as "quantity_rejected",
-        gi.rejection_reason as "reason"
+        COALESCE(gi.rejection_reason, 'N/A') as "reason"
       FROM "goods_receipt_note_items" gi
       JOIN "goods_receipt_notes" g ON gi.grn_id = g.id
       JOIN "item_master" i ON gi.item_id = i.id
@@ -331,7 +367,9 @@ export const inventoryStoreToStoreIssueReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Store to Store Item Issue',
   description: 'Log of inventory stock transfers between internal stores.',
-  filters: defaultFilters,
+  filters: defaultFiltersWithStore,
+  // D3 Directive: showStore confirmed — filtering by from/to store is core to this report.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'transfer_date', label: 'Transfer Date', type: 'date' },
     { key: 'transfer_number', label: 'Transfer Number', type: 'string' },
@@ -345,7 +383,7 @@ export const inventoryStoreToStoreIssueReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end } = filters;
+    const { date_start, date_end, store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(st.created_at) as "transfer_date",
@@ -363,6 +401,7 @@ export const inventoryStoreToStoreIssueReport: ReportDefinition = {
       WHERE st."organizationId" = ${orgId}
         AND st.created_at >= ${new Date(date_start)}
         AND st.created_at <= ${new Date(date_end)}
+        ${store_id ? Prisma.sql`AND (st.from_store_id = ${parseInt(store_id)} OR st.to_store_id = ${parseInt(store_id)})` : Prisma.empty}
       ORDER BY st.created_at DESC
     `;
     return { 
@@ -382,7 +421,9 @@ export const inventoryBatchInflowOutflowReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Batch wise stock inflow outflow',
   description: 'Track quantity coming in and going out of specific item batches.',
-  filters: defaultFilters,
+  filters: defaultFiltersWithStore,
+  // D3 Directive: showStore confirmed — batch movements are per-store.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'batch_no', label: 'Batch No', type: 'string' },
     { key: 'item_name', label: 'Item Name', type: 'string' },
@@ -394,10 +435,10 @@ export const inventoryBatchInflowOutflowReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end } = filters;
+    const { date_start, date_end, store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
-        b.batch_no as "batch_no",
+        COALESCE(b.batch_no, 'NO BATCH') as "batch_no",
         i.name as "item_name",
         s.name as "store_name",
         SUM(im.quantity_in) as "total_inflow",
@@ -409,6 +450,7 @@ export const inventoryBatchInflowOutflowReport: ReportDefinition = {
       WHERE im."organizationId" = ${orgId}
         AND im.created_at >= ${new Date(date_start)}
         AND im.created_at <= ${new Date(date_end)}
+        ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       GROUP BY b.batch_no, i.name, s.name
       ORDER BY i.name ASC
     `;
@@ -429,8 +471,13 @@ export const inventoryAsOnDateStockReport: ReportDefinition = {
   id: 'inventory-as-on-date-stock',
   category: ReportCategory.Inventory,
   name: 'Inventory - As on Date Stock',
-  description: 'Displays the latest balance after the last inventory movement up to a certain date.',
-  filters: defaultFilters, // Or just date_end if you only want 'as on'
+  description: 'Point-in-time stock balance: uses the balance_after of the last movement record up to the chosen date per store/item combination.',
+  filters: z.object({
+    date_end: z.string().or(z.date()),
+    store_id: z.string().optional(),
+  }),
+  // D3 Directive: showStore confirmed — "as on date" per-store is the standard use-case.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'store_name', label: 'Store', type: 'string' },
     { key: 'item_name', label: 'Item Name', type: 'string' },
@@ -440,7 +487,11 @@ export const inventoryAsOnDateStockReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_end } = filters;
+    const { date_end, store_id } = filters;
+    // Uses CTE + ROW_NUMBER() to get the latest movement record (by created_at) per
+    // store+item combination up to date_end. balance_after on that record equals the
+    // cumulative stock balance at that point in time — this is the correct "as-on-date"
+    // semantic. Reading current store_stocks would be WRONG here.
     const rows = await prisma.$queryRaw<any[]>`
       WITH RankedMovements AS (
         SELECT 
@@ -451,6 +502,7 @@ export const inventoryAsOnDateStockReport: ReportDefinition = {
         FROM "inventory_movements" im
         WHERE im."organizationId" = ${orgId}
           AND im.created_at <= ${new Date(date_end)}
+          ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       )
       SELECT 
         s.name as "store_name",
@@ -527,7 +579,9 @@ export const inventoryBinCardBatchReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Bin Card - Batch wise',
   description: 'Ledger of all stock movements broken down into batch-specific details.',
-  filters: defaultFilters,
+  filters: defaultFiltersWithStore,
+  // D3 Directive: showStore confirmed — bin card is per-store by definition.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'movement_date', label: 'Date', type: 'date' },
     { key: 'store_name', label: 'Store Name', type: 'string' },
@@ -542,13 +596,17 @@ export const inventoryBinCardBatchReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end } = filters;
+    const { date_start, date_end, store_id } = filters;
+    // movement_type values per schema L5305: OPENING, GRN_RECEIPT, ISSUE, INDENT_ISSUE,
+    // INDENT_RECEIPT, TRANSFER_OUT, TRANSFER_IN, CONSUMPTION, PATIENT_CHARGE,
+    // RETURN_TO_STORE, SUPPLIER_RETURN, EXPIRY_WRITEOFF, DAMAGE_WRITEOFF,
+    // ADJUSTMENT_PLUS, ADJUSTMENT_MINUS
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(im.created_at) as "movement_date",
         s.name as "store_name",
         i.name as "item_name",
-        b.batch_no as "batch_no",
+        COALESCE(b.batch_no, 'NO BATCH') as "batch_no",
         im.movement_type as "movement_type",
         im.quantity_in as "quantity_in",
         im.quantity_out as "quantity_out",
@@ -560,6 +618,7 @@ export const inventoryBinCardBatchReport: ReportDefinition = {
       WHERE im."organizationId" = ${orgId}
         AND im.created_at >= ${new Date(date_start)}
         AND im.created_at <= ${new Date(date_end)}
+        ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       ORDER BY im.created_at ASC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -582,7 +641,9 @@ export const inventoryBinCardItemReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Bin Card - Item wise',
   description: 'Ledger of stock movements aggregated at the parent item level (regardless of batch).',
-  filters: defaultFilters,
+  filters: defaultFiltersWithStore,
+  // D3 Directive: showStore confirmed — bin card is per-store by definition.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'movement_date', label: 'Date', type: 'date' },
     { key: 'store_name', label: 'Store Name', type: 'string' },
@@ -596,7 +657,7 @@ export const inventoryBinCardItemReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end } = filters;
+    const { date_start, date_end, store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(im.created_at) as "movement_date",
@@ -612,6 +673,7 @@ export const inventoryBinCardItemReport: ReportDefinition = {
       WHERE im."organizationId" = ${orgId}
         AND im.created_at >= ${new Date(date_start)}
         AND im.created_at <= ${new Date(date_end)}
+        ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       ORDER BY im.created_at ASC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -645,6 +707,9 @@ export const inventoryMovingItemsReport: ReportDefinition = {
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // Outward movement_type values per schema L5305:
+    // ISSUE, INDENT_ISSUE, CONSUMPTION, PATIENT_CHARGE, TRANSFER_OUT,
+    // SUPPLIER_RETURN, EXPIRY_WRITEOFF, DAMAGE_WRITEOFF
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         i.item_code as "item_code",
@@ -655,7 +720,7 @@ export const inventoryMovingItemsReport: ReportDefinition = {
       FROM "inventory_movements" im
       JOIN "item_master" i ON im.item_id = i.id
       WHERE im."organizationId" = ${orgId}
-        AND im.movement_type IN ('ISSUE', 'INDENT_ISSUE', 'CONSUMPTION', 'PATIENT_CHARGE')
+        AND im.movement_type IN ('ISSUE', 'INDENT_ISSUE', 'CONSUMPTION', 'PATIENT_CHARGE', 'TRANSFER_OUT', 'SUPPLIER_RETURN', 'EXPIRY_WRITEOFF', 'DAMAGE_WRITEOFF')
         AND im.created_at >= ${new Date(date_start)}
         AND im.created_at <= ${new Date(date_end)}
       GROUP BY i.item_code, i.name, i.item_type
@@ -677,12 +742,13 @@ export const inventoryGrnPendingCnReport: ReportDefinition = {
   id: 'inventory-grn-pending-cn',
   category: ReportCategory.Inventory,
   name: 'Inventory - GRN - Pending CN Number Update',
-  description: 'List of Goods Receipt Notes that have rejected quantities, awaiting a Credit Note from the supplier.',
+  description: 'List of GRN items that were rejected, awaiting a Credit Note from the supplier.',
   filters: defaultFilters,
   columns: [
     { key: 'grn_date', label: 'GRN Date', type: 'date' },
     { key: 'grn_number', label: 'GRN Number', type: 'string' },
     { key: 'vendor_name', label: 'Vendor Name', type: 'string' },
+    { key: 'item_name', label: 'Item Name', type: 'string' },
     { key: 'rejected_quantity', label: 'Rejected Quantity', type: 'number', total: 'sum' },
     { key: 'reason', label: 'Rejection Reason', type: 'string' },
   ],
@@ -691,20 +757,38 @@ export const inventoryGrnPendingCnReport: ReportDefinition = {
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    // BUG AUDIT (D3 Directive): The previous suspected bug was that rejection data was
+    // read from the GRN *header* instead of item level. This is CONFIRMED and FIXED.
+    //
+    // Schema truth:
+    //   - goods_receipt_notes (header): rejected_quantity (Int, L1917), rejection_reason (String?, L1918)
+    //     → These are DENORMALISED totals on the header, NOT item-level detail.
+    //   - goods_receipt_note_items: quantity_rejected (Int, L5563), rejection_reason (String?, L5564)
+    //     → These are the TRUE per-item rejection records.
+    //
+    // This report shows pending CN per rejected item line, so we MUST join to
+    // goods_receipt_note_items for item-level granularity. The header fields are NOT used.
+    //
+    // Note: The schema has no dedicated `cn_number` column on either GRN table — "Pending CN"
+    // means no credit note has been issued yet. We identify this by: quantity_rejected > 0.
+    // A future enhancement could filter out rows where a matching CreditNote record exists.
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(g.received_at) as "grn_date",
         g.grn_number as "grn_number",
         v.vendor_name as "vendor_name",
-        g.rejected_quantity as "rejected_quantity",
-        g.rejection_reason as "reason"
-      FROM "goods_receipt_notes" g
+        i.name as "item_name",
+        gi.quantity_rejected as "rejected_quantity",
+        COALESCE(gi.rejection_reason, 'Pending CN') as "reason"
+      FROM "goods_receipt_note_items" gi
+      JOIN "goods_receipt_notes" g ON gi.grn_id = g.id
+      JOIN "item_master" i ON gi.item_id = i.id
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       WHERE g."organizationId" = ${orgId}
-        AND g.rejected_quantity > 0
+        AND gi.quantity_rejected > 0
         AND g.received_at >= ${new Date(date_start)}
         AND g.received_at <= ${new Date(date_end)}
-      ORDER BY DATE(g.received_at) DESC
+      ORDER BY g.received_at DESC, g.grn_number
     `;
     const totals = rows.reduce((acc, row) => {
       acc.rejected_quantity += Number(row.rejected_quantity || 0);
@@ -723,7 +807,9 @@ export const inventoryStoreConsumptionReport: ReportDefinition = {
   category: ReportCategory.Inventory,
   name: 'Inventory - Store Consumption Report',
   description: 'Internal consumption of items within different stores.',
-  filters: defaultFilters,
+  filters: defaultFiltersWithStore,
+  // D3 Directive: showStore confirmed — consumption is per-store.
+  filterSpec: { showStore: true },
   columns: [
     { key: 'date', label: 'Date', type: 'date' },
     { key: 'store_name', label: 'Store Name', type: 'string' },
@@ -735,7 +821,7 @@ export const inventoryStoreConsumptionReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.inventory.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end } = filters;
+    const { date_start, date_end, store_id } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(im.created_at) as "date",
@@ -750,6 +836,7 @@ export const inventoryStoreConsumptionReport: ReportDefinition = {
         AND im.movement_type = 'CONSUMPTION'
         AND im.created_at >= ${new Date(date_start)}
         AND im.created_at <= ${new Date(date_end)}
+        ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       GROUP BY DATE(im.created_at), s.name, i.name
       ORDER BY DATE(im.created_at) DESC
     `;
@@ -765,4 +852,3 @@ export const inventoryStoreConsumptionReport: ReportDefinition = {
     };
   },
 };
-

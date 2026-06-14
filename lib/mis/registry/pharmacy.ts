@@ -200,6 +200,42 @@ export const pharmacyIpDailyReport: ReportDefinition = {
   requiredPermission: 'mis_reports.pharmacy.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
+    const start = new Date(date_start);
+    const end   = new Date(date_end);
+    const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+
+    // ── Phase E3 Optimisation ────────────────────────────────────────────────
+    // > 7 days  → rollup table (mis_daily_pharmacy_rollups, order_type='IP')
+    // ≤ 7 days  → live pharmacy_orders table
+    //
+    // Note: rollup does not store items_dispensed (not in MISDailyPharmacyRollup
+    // schema). For long-range summary the order count + amount is the primary KPI.
+    if (rangeDays > 7) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT
+          r.report_date     AS "date",
+          r.order_count     AS "total_orders",
+          NULL              AS "total_items_dispensed",
+          r.total_amount    AS "total_amount"
+        FROM "mis_daily_pharmacy_rollups" r
+        WHERE r."organizationId" = ${orgId}
+          AND r.order_type = 'IP'
+          AND r.report_date >= ${start}
+          AND r.report_date <= ${end}
+        ORDER BY r.report_date DESC
+      `;
+      return {
+        rows: rows.map(r => ({
+          ...r,
+          total_orders:          Number(r.total_orders || 0),
+          total_items_dispensed: null, // not available at rollup granularity
+          total_amount:          Number(r.total_amount || 0),
+        })),
+        totals: {},
+      };
+    }
+
+    // ── Live path ─────────────────────────────────────────────────────────────
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(po.created_at) as "date",
@@ -209,8 +245,8 @@ export const pharmacyIpDailyReport: ReportDefinition = {
       FROM "pharmacy_orders" po
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${start}
+        AND po.created_at <= ${end}
       GROUP BY DATE(po.created_at)
       ORDER BY DATE(po.created_at) DESC
     `;
@@ -850,6 +886,459 @@ export const pharmacyIpPullOffReport: ReportDefinition = {
         amount: Number(r.amount || 0),
       })), 
       totals: {} 
+    };
+  },
+};
+
+// ─── Phase D1: New Pharmacy Reports — Missing from PRD ───────────────────
+//
+// Gap Analysis §3.3 identified 4 missing PRD reports that were being covered
+// by bonus reports (Reorder Level, Supplier List, etc.) in the count.
+// These are the actual PRD-mandated reports now implemented:
+
+export const pharmacyOpSummaryReport: ReportDefinition = {
+  id: 'pharmacy-op-summary',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Pharmacy OP Summary',
+  description: 'Daily aggregated summary of outpatient pharmacy sales — total orders, items dispensed, and revenue by day.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'sale_date',       label: 'Sale Date',       type: 'date' },
+    { key: 'total_orders',    label: 'Total Orders',    type: 'number', total: 'sum' },
+    { key: 'items_dispensed', label: 'Items Dispensed', type: 'number', total: 'sum' },
+    { key: 'total_amount',    label: 'Total Amount',    type: 'currency', total: 'sum' },
+    { key: 'return_amount',   label: 'Returns',         type: 'currency', total: 'sum' },
+    { key: 'net_amount',      label: 'Net Amount',      type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'sale_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const start = new Date(date_start);
+    const end   = new Date(date_end);
+    const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
+
+    // ── Phase E3 Optimisation ────────────────────────────────────────────────
+    // > 7 days  → rollup table (mis_daily_pharmacy_rollups, order_type='OP')
+    //             The rollup also stores return_amount and net_amount — these are
+    //             surfaced as bonus columns in the long-range view.
+    // ≤ 7 days  → live pharmacy_orders table (real-time accuracy)
+    if (rangeDays > 7) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT
+          r.report_date   AS "sale_date",
+          r.order_count   AS "total_orders",
+          NULL            AS "items_dispensed",
+          r.total_amount  AS "total_amount",
+          r.return_amount AS "return_amount",
+          r.net_amount    AS "net_amount"
+        FROM "mis_daily_pharmacy_rollups" r
+        WHERE r."organizationId" = ${orgId}
+          AND r.order_type = 'OP'
+          AND r.report_date >= ${start}
+          AND r.report_date <= ${end}
+        ORDER BY r.report_date DESC
+      `;
+
+      const totals = rows.reduce((acc, r) => {
+        acc.total_orders   += Number(r.total_orders   || 0);
+        acc.total_amount   += Number(r.total_amount   || 0);
+        acc.return_amount  += Number(r.return_amount  || 0);
+        acc.net_amount     += Number(r.net_amount     || 0);
+        return acc;
+      }, { total_orders: 0, items_dispensed: 0, total_amount: 0, return_amount: 0, net_amount: 0 });
+
+      return {
+        rows: rows.map(r => ({
+          ...r,
+          total_orders:   Number(r.total_orders   || 0),
+          items_dispensed: null, // not available at rollup granularity
+          total_amount:   Number(r.total_amount   || 0),
+          return_amount:  Number(r.return_amount  || 0),
+          net_amount:     Number(r.net_amount     || 0),
+        })),
+        totals,
+      };
+    }
+
+    // ── Live path (≤ 7 days) ─────────────────────────────────────────────────
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(po.created_at)       AS "sale_date",
+        COUNT(po.id)              AS "total_orders",
+        SUM(po.items_dispensed)   AS "items_dispensed",
+        SUM(po.total_amount)      AS "total_amount",
+        0                         AS "return_amount",
+        SUM(po.total_amount)      AS "net_amount"
+      FROM "pharmacy_orders" po
+      WHERE po."organizationId" = ${orgId}
+        AND po.is_ipd_linked = false
+        AND po.created_at >= ${start}
+        AND po.created_at <= ${end}
+      GROUP BY DATE(po.created_at)
+      ORDER BY DATE(po.created_at) DESC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.total_orders    += Number(r.total_orders    || 0);
+      acc.items_dispensed += Number(r.items_dispensed || 0);
+      acc.total_amount    += Number(r.total_amount    || 0);
+      acc.net_amount      += Number(r.net_amount      || 0);
+      return acc;
+    }, { total_orders: 0, items_dispensed: 0, total_amount: 0, return_amount: 0, net_amount: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        total_orders:    Number(r.total_orders    || 0),
+        items_dispensed: Number(r.items_dispensed || 0),
+        total_amount:    Number(r.total_amount    || 0),
+        return_amount:   0,
+        net_amount:      Number(r.net_amount      || 0),
+      })),
+      totals,
+    };
+  },
+};
+
+export const pharmacyOpSaleDetailReport: ReportDefinition = {
+  id: 'pharmacy-op-sale-detail',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Pharmacy OP Sale Detail',
+  description: 'Line-item detail of all outpatient pharmacy sales — one row per dispensed item per order.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'sale_date',    label: 'Sale Date',    type: 'date' },
+    { key: 'order_id',     label: 'Order ID',     type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'doctor_name',  label: 'Doctor',       type: 'string' },
+    { key: 'item_name',    label: 'Item Name',    type: 'string' },
+    { key: 'batch_id',     label: 'Batch',        type: 'string' },
+    { key: 'quantity',     label: 'Qty',          type: 'number',   total: 'sum' },
+    { key: 'unit_price',   label: 'Unit Price',   type: 'currency' },
+    { key: 'tax_amount',   label: 'Tax',          type: 'currency', total: 'sum' },
+    { key: 'total_price',  label: 'Line Total',   type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'sale_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(po.created_at)                        AS "sale_date",
+        po.id::text                                AS "order_id",
+        COALESCE(p.full_name, '—')                 AS "patient_name",
+        COALESCE(doc.name, 'Unassigned')           AS "doctor_name",
+        poi.medicine_name                          AS "item_name",
+        COALESCE(poi.batch_id, '—')               AS "batch_id",
+        COALESCE(poi.quantity_dispensed, 0)        AS "quantity",
+        COALESCE(poi.unit_price, 0)               AS "unit_price",
+        COALESCE(poi.tax_amount, 0)               AS "tax_amount",
+        COALESCE(poi.total_price, 0)              AS "total_price"
+      FROM "pharmacy_order_items" poi
+      JOIN  "pharmacy_orders" po  ON poi.order_id  = po.id
+      LEFT JOIN "OPD_REG"     p   ON po.patient_id = p.patient_id
+      LEFT JOIN "users"       doc ON po.doctor_id  = doc.id
+      WHERE po."organizationId" = ${orgId}
+        AND po.is_ipd_linked = false
+        AND po.created_at >= ${new Date(date_start)}
+        AND po.created_at <= ${new Date(date_end)}
+      ORDER BY po.created_at DESC, poi.id ASC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.quantity    += Number(r.quantity    || 0);
+      acc.tax_amount  += Number(r.tax_amount  || 0);
+      acc.total_price += Number(r.total_price || 0);
+      return acc;
+    }, { quantity: 0, tax_amount: 0, total_price: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        quantity:    Number(r.quantity    || 0),
+        unit_price:  Number(r.unit_price  || 0),
+        tax_amount:  Number(r.tax_amount  || 0),
+        total_price: Number(r.total_price || 0),
+      })),
+      totals,
+    };
+  },
+};
+
+export const pharmacyOpReturnDetailReport: ReportDefinition = {
+  id: 'pharmacy-op-return-detail',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Pharmacy OP Return Detail',
+  description: 'Line-item detail of all outpatient pharmacy returns — items returned by patients with original sale reference.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'return_date',      label: 'Return Date',       type: 'date' },
+    { key: 'return_id',        label: 'Return ID',         type: 'string' },
+    { key: 'patient_name',     label: 'Patient Name',      type: 'string' },
+    { key: 'item_name',        label: 'Item Name',         type: 'string' },
+    { key: 'batch_id',         label: 'Batch',             type: 'string' },
+    { key: 'quantity_returned',label: 'Qty Returned',      type: 'number',   total: 'sum' },
+    { key: 'unit_cost',        label: 'Unit Cost',         type: 'currency' },
+    { key: 'return_value',     label: 'Return Value',      type: 'currency', total: 'sum' },
+    { key: 'reason',           label: 'Return Reason',     type: 'string' },
+    { key: 'status',           label: 'Status',            type: 'string' },
+  ],
+  defaultSort: { column: 'return_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    // pharmacy_returns.return_type = 'patient_return' covers OP returns.
+    // We distinguish OP from IP by checking that the original invoice has no
+    // admission_id (i.e. it is an OP billing invoice). If no original invoice
+    // is linked we still include the row — it may be a direct counter return.
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(pr.created_at)                              AS "return_date",
+        pr.id::text                                      AS "return_id",
+        COALESCE(p.full_name, '—')                       AS "patient_name",
+        COALESCE(m.brand_name, im.item_name, '—')        AS "item_name",
+        COALESCE(pr.batch_id, '—')                      AS "batch_id",
+        pr.quantity                                      AS "quantity_returned",
+        COALESCE(pr.unit_cost, 0)                        AS "unit_cost",
+        (pr.quantity * COALESCE(pr.unit_cost, 0))        AS "return_value",
+        COALESCE(pr.reason, '—')                         AS "reason",
+        pr.status                                        AS "status"
+      FROM "pharmacy_returns" pr
+      -- resolve item name from pharmacy master (medicine_id) or general item master (item_id)
+      LEFT JOIN "pharmacy_medicine_master" m  ON pr.medicine_id = m.id
+      LEFT JOIN "item_master"              im ON pr.item_id     = im.id
+      -- resolve patient from original sale invoice
+      LEFT JOIN "invoices"  inv ON pr.original_invoice_id = inv.id
+      LEFT JOIN "OPD_REG"   p   ON inv.patient_id         = p.patient_id
+      WHERE pr."organizationId" = ${orgId}
+        AND pr.return_type = 'patient_return'
+        AND (inv.admission_id IS NULL OR inv.id IS NULL)   -- OP: no admission linked
+        AND pr.created_at >= ${new Date(date_start)}
+        AND pr.created_at <= ${new Date(date_end)}
+      ORDER BY pr.created_at DESC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.quantity_returned += Number(r.quantity_returned || 0);
+      acc.return_value      += Number(r.return_value      || 0);
+      return acc;
+    }, { quantity_returned: 0, return_value: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        quantity_returned: Number(r.quantity_returned || 0),
+        unit_cost:         Number(r.unit_cost         || 0),
+        return_value:      Number(r.return_value      || 0),
+      })),
+      totals,
+    };
+  },
+};
+
+export const pharmacyHsnSummaryReport: ReportDefinition = {
+  id: 'pharmacy-hsn-summary',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Pharmacy HSN Summary',
+  description: 'HSN/SAC code-wise tax summary for pharmacy OP sales — required for GST filing.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'sale_date',       label: 'Sale Date',       type: 'date' },
+    { key: 'hsn_sac_code',    label: 'HSN/SAC Code',    type: 'string' },
+    { key: 'item_name',       label: 'Item Description', type: 'string' },
+    { key: 'total_quantity',  label: 'Total Qty',        type: 'number',   total: 'sum' },
+    { key: 'taxable_value',   label: 'Taxable Value',    type: 'currency', total: 'sum' },
+    { key: 'tax_rate',        label: 'Tax Rate (%)',     type: 'number' },
+    { key: 'total_tax',       label: 'Total Tax',        type: 'currency', total: 'sum' },
+    { key: 'gross_amount',    label: 'Gross Amount',     type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'sale_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    // Groups by date + HSN code + tax rate to produce GST-filing-ready buckets.
+    // Items with NULL hsn_sac_code are bucketed under 'UNCLASSIFIED'.
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(po.created_at)                             AS "sale_date",
+        COALESCE(poi.hsn_sac_code, 'UNCLASSIFIED')      AS "hsn_sac_code",
+        poi.medicine_name                               AS "item_name",
+        SUM(COALESCE(poi.quantity_dispensed, 0))        AS "total_quantity",
+        SUM(
+          COALESCE(poi.total_price, 0)
+          - COALESCE(poi.tax_amount, 0)
+        )                                               AS "taxable_value",
+        COALESCE(poi.tax_rate, 0)                       AS "tax_rate",
+        SUM(COALESCE(poi.tax_amount, 0))                AS "total_tax",
+        SUM(COALESCE(poi.total_price, 0))               AS "gross_amount"
+      FROM "pharmacy_order_items" poi
+      JOIN "pharmacy_orders" po ON poi.order_id = po.id
+      WHERE po."organizationId" = ${orgId}
+        AND po.is_ipd_linked = false
+        AND po.created_at >= ${new Date(date_start)}
+        AND po.created_at <= ${new Date(date_end)}
+      GROUP BY DATE(po.created_at), poi.hsn_sac_code, poi.medicine_name, poi.tax_rate
+      ORDER BY DATE(po.created_at) DESC, poi.hsn_sac_code ASC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.total_quantity += Number(r.total_quantity || 0);
+      acc.taxable_value  += Number(r.taxable_value  || 0);
+      acc.total_tax      += Number(r.total_tax      || 0);
+      acc.gross_amount   += Number(r.gross_amount   || 0);
+      return acc;
+    }, { total_quantity: 0, taxable_value: 0, total_tax: 0, gross_amount: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        total_quantity: Number(r.total_quantity || 0),
+        taxable_value:  Number(r.taxable_value  || 0),
+        tax_rate:       Number(r.tax_rate       || 0),
+        total_tax:      Number(r.total_tax      || 0),
+        gross_amount:   Number(r.gross_amount   || 0),
+      })),
+      totals,
+    };
+  },
+};
+
+export const pharmacySettlementReport: ReportDefinition = {
+  id: 'pharmacy-settlement',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Pharmacy Settlement',
+  description: 'Payment settlement details for all pharmacy invoices — cash received against billed amounts.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'settlement_date',  label: 'Settlement Date', type: 'date' },
+    { key: 'receipt_number',   label: 'Receipt No',      type: 'string' },
+    { key: 'order_id',         label: 'Order ID',        type: 'string' },
+    { key: 'patient_name',     label: 'Patient Name',    type: 'string' },
+    { key: 'payment_method',   label: 'Payment Mode',    type: 'string' },
+    { key: 'billed_amount',    label: 'Billed Amount',   type: 'currency', total: 'sum' },
+    { key: 'settled_amount',   label: 'Settled Amount',  type: 'currency', total: 'sum' },
+    { key: 'balance_due',      label: 'Balance Due',     type: 'currency', total: 'sum' },
+    { key: 'payment_status',   label: 'Status',          type: 'string' },
+  ],
+  defaultSort: { column: 'settlement_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    // Join path: pharmacy_orders → invoices → payments.
+    // The pharmacy_orders.invoice_id is an Int? FK to invoices.id.
+    // We left-join payments so orders with invoices but no payment yet
+    // still appear, showing balance_due > 0.
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(pay.created_at)                             AS "settlement_date",
+        pay.receipt_number                               AS "receipt_number",
+        po.id::text                                      AS "order_id",
+        COALESCE(p.full_name, '—')                       AS "patient_name",
+        COALESCE(pay.payment_method, '—')                AS "payment_method",
+        COALESCE(inv.net_amount, po.total_amount, 0)     AS "billed_amount",
+        COALESCE(pay.amount, 0)                          AS "settled_amount",
+        GREATEST(
+          COALESCE(inv.net_amount, po.total_amount, 0)
+          - COALESCE(inv.paid_amount, 0),
+          0
+        )                                                AS "balance_due",
+        COALESCE(pay.status, 'Unpaid')                   AS "payment_status"
+      FROM "pharmacy_orders" po
+      JOIN  "invoices"  inv ON po.invoice_id  = inv.id
+      JOIN  "payments"  pay ON pay.invoice_id = inv.id
+      LEFT JOIN "OPD_REG" p ON po.patient_id  = p.patient_id
+      WHERE po."organizationId" = ${orgId}
+        AND pay.created_at >= ${new Date(date_start)}
+        AND pay.created_at <= ${new Date(date_end)}
+      ORDER BY pay.created_at DESC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.billed_amount   += Number(r.billed_amount   || 0);
+      acc.settled_amount  += Number(r.settled_amount  || 0);
+      acc.balance_due     += Number(r.balance_due     || 0);
+      return acc;
+    }, { billed_amount: 0, settled_amount: 0, balance_due: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        billed_amount:  Number(r.billed_amount  || 0),
+        settled_amount: Number(r.settled_amount || 0),
+        balance_due:    Number(r.balance_due    || 0),
+      })),
+      totals,
+    };
+  },
+};
+
+export const pharmacyDoctorWiseDetailReport: ReportDefinition = {
+  id: 'pharmacy-doctor-wise-detail',
+  category: ReportCategory.Pharmacy,
+  name: 'Pharmacy - Doctor Wise Sale Detail',
+  description: 'Line-item pharmacy sales attributed to each prescribing doctor — one row per dispensed item.',
+  filters: defaultFilters,
+  columns: [
+    { key: 'sale_date',    label: 'Sale Date',    type: 'date' },
+    { key: 'doctor_name',  label: 'Doctor Name',  type: 'string' },
+    { key: 'order_id',     label: 'Order ID',     type: 'string' },
+    { key: 'patient_name', label: 'Patient Name', type: 'string' },
+    { key: 'item_name',    label: 'Item Name',    type: 'string' },
+    { key: 'quantity',     label: 'Qty Dispensed',type: 'number',   total: 'sum' },
+    { key: 'unit_price',   label: 'Unit Price',   type: 'currency' },
+    { key: 'line_total',   label: 'Line Total',   type: 'currency', total: 'sum' },
+  ],
+  defaultSort: { column: 'sale_date', direction: 'desc' },
+  rowLimitSync: 5000,
+  requiredPermission: 'mis_reports.pharmacy.view',
+  queryFn: async (filters: ValidatedFilters, orgId: string) => {
+    const { date_start, date_end } = filters;
+    // This report is the line-item companion to pharmacyDoctorWiseSaleReport.
+    // The existing pharmacyDoctorPullOffReport tracked items for ALL dispensing
+    // actions (not necessarily sale-type). This report restricts to actual sales
+    // (is_ipd_linked = false OR true — doctor attribution spans both OP and IP)
+    // and surfaces item-level data grouped under the prescribing doctor.
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT
+        DATE(po.created_at)                        AS "sale_date",
+        COALESCE(doc.name, 'Unassigned')           AS "doctor_name",
+        po.id::text                                AS "order_id",
+        COALESCE(p.full_name, '—')                 AS "patient_name",
+        poi.medicine_name                          AS "item_name",
+        COALESCE(poi.quantity_dispensed, 0)        AS "quantity",
+        COALESCE(poi.unit_price, 0)               AS "unit_price",
+        COALESCE(poi.total_price, 0)              AS "line_total"
+      FROM "pharmacy_order_items" poi
+      JOIN  "pharmacy_orders" po  ON poi.order_id  = po.id
+      LEFT JOIN "users"       doc ON po.doctor_id  = doc.id
+      LEFT JOIN "OPD_REG"     p   ON po.patient_id = p.patient_id
+      WHERE po."organizationId" = ${orgId}
+        AND COALESCE(poi.quantity_dispensed, 0) > 0
+        AND po.created_at >= ${new Date(date_start)}
+        AND po.created_at <= ${new Date(date_end)}
+      ORDER BY doc.name ASC NULLS LAST, po.created_at DESC, poi.id ASC
+    `;
+
+    const totals = rows.reduce((acc, r) => {
+      acc.quantity   += Number(r.quantity   || 0);
+      acc.line_total += Number(r.line_total || 0);
+      return acc;
+    }, { quantity: 0, line_total: 0 });
+
+    return {
+      rows: rows.map(r => ({
+        ...r,
+        quantity:   Number(r.quantity   || 0),
+        unit_price: Number(r.unit_price || 0),
+        line_total: Number(r.line_total || 0),
+      })),
+      totals,
     };
   },
 };

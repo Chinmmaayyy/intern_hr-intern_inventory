@@ -21,6 +21,7 @@ export interface FilterSpec {
   showBillType?:   boolean;  // Cash | TPA | Corporate | All
   showStatus?:     boolean;
   showStore?:      boolean;
+  showWard?:       boolean;  // renders Ward dropdown (fetches from /api/wards) — used by IPD/admission reports
   statusOptions?:  string[]; // e.g. ['Pending', 'Completed', 'Cancelled']
 }
 
