@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
-
-const prisma = new PrismaClient();
 
 const defaultFilters = z.object({
   date_start: z.string().or(z.date()),

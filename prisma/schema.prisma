@@ -246,10 +246,17 @@ model Organization {
   billing_order_sets   BillingOrderSet[]
   discount_schemes     DiscountScheme[]
 
-  // Pharmacy Upgrade ? Procurement & Inventory
+  // Pharmacy Upgrade — Procurement & Inventory
   pharmacy_inventory_movements PharmacyInventoryMovement[]
   pharmacy_purchase_invoices   PharmacyPurchaseInvoice[]
   dispense_allocations         DispenseAllocation[]
+
+  // Phase A4 — Ambulance, Optical & MIS Rollups
+  ambulance_requests            AmbulanceRequest[]
+  optical_prescriptions         OpticalPrescription[]
+  optical_orders                OpticalOrder[]
+  mis_daily_billing_rollups     MISDailyBillingRollup[]
+  mis_daily_pharmacy_rollups    MISDailyPharmacyRollup[]
 
   @@map("organizations")
 }
@@ -5016,26 +5023,31 @@ model ReportPreset {
 }
 
 model ReportSchedule {
-  id              String       @id @default(uuid())
+  id              String        @id @default(uuid())
   report_id       String
-  preset_id       String
+  preset_id       String?                             // nullable — schedule may run without a saved preset
   cron_spec       String
   format          String
+  filters_json    Json?                               // standalone filters used when preset_id is null
   recipients_json Json
   channel         String
-  is_active       Boolean      @default(true)
+  is_active       Boolean       @default(true)
   last_run_at     DateTime?
   last_status     String?
+  next_run_at     DateTime?                           // pre-computed by cron engine after each run
+  run_count       Int           @default(0)           // total successful delivery count
   owner_user_id   String
   organizationId  String
-  createdAt       DateTime     @default(now())
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  owner_user      User         @relation("ReportScheduleOwner", fields: [owner_user_id], references: [id])
-  preset          ReportPreset @relation(fields: [preset_id], references: [id])
+  createdAt       DateTime      @default(now())
+  organization    Organization  @relation(fields: [organizationId], references: [id])
+  owner_user      User          @relation("ReportScheduleOwner", fields: [owner_user_id], references: [id])
+  preset          ReportPreset? @relation(fields: [preset_id], references: [id])
 
   @@index([organizationId])
+  @@index([is_active, next_run_at])                   // cron delivery engine scans this index
   @@map("report_schedules")
 }
+
 
 model ReportAccessLog {
   id             String       @id @default(uuid())
@@ -5561,3 +5573,185 @@ model GoodsReceiptNoteItem {
   @@index([grn_id])
   @@map("goods_receipt_note_items")
 }
+
+// ========================================
+// MODULE — Ambulance
+// ========================================
+
+model AmbulanceRequest {
+  id              String    @id @default(uuid())
+  organizationId  String
+  request_number  String    @unique                     // AMB-20260614-001
+  request_type    String    @default("Emergency")       // Emergency | Planned | Transfer | Discharge
+  patient_id      String?                               // null for pre-registration walk-ins
+  patient_name    String?
+  contact_phone   String?
+  pickup_address  String?
+  destination     String?
+  vehicle_number  String?
+  driver_name     String?
+  driver_phone    String?
+  status          String    @default("Requested")
+  // Status flow: Requested → Dispatched → En_Route → Arrived → Completed | Cancelled
+  requested_at    DateTime  @default(now())
+  dispatched_at   DateTime?
+  pickup_at       DateTime?                             // time ambulance physically arrived at pickup location
+  delivery_at     DateTime?                             // time patient delivered to hospital / destination
+  completed_at    DateTime?
+  cancelled_at    DateTime?
+  cancel_reason   String?
+  dispatch_tat_mins Int?                                // dispatched_at − requested_at in minutes
+  total_tat_mins    Int?                                // completed_at − requested_at in minutes
+  billing_amount  Float?
+  notes           String?
+  created_by      String?                               // User.id of the staff member who logged the request
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, requested_at])
+  @@index([organizationId, status])
+  @@map("ambulance_requests")
+}
+
+// ========================================
+// MODULE — Optical
+// ========================================
+
+model OpticalPrescription {
+  id                String    @id @default(uuid())
+  organizationId    String
+  patient_id        String
+  doctor_id         String?
+  prescription_date DateTime  @default(now())
+  // Right eye
+  right_sphere      Float?
+  right_cylinder    Float?
+  right_axis        Int?
+  right_add         Float?
+  right_va          String?                             // Visual Acuity e.g. "6/6"
+  // Left eye
+  left_sphere       Float?
+  left_cylinder     Float?
+  left_axis         Int?
+  left_add          Float?
+  left_va           String?
+  // Combined
+  pd_distance       Float?                             // Pupillary distance for distance vision
+  pd_near           Float?                             // Pupillary distance for near vision
+  prism_right       String?
+  prism_left        String?
+  lens_recommendation String?                          // e.g. "Progressive Anti-Reflective"
+  notes             String?
+  is_active         Boolean   @default(true)           // false when superseded by a newer prescription
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  optical_orders OpticalOrder[]
+
+  @@index([organizationId, patient_id])
+  @@index([organizationId, prescription_date])
+  @@map("optical_prescriptions")
+}
+
+model OpticalOrder {
+  id               String    @id @default(uuid())
+  organizationId   String
+  order_number     String    @unique                    // OPT-20260614-001
+  patient_id       String
+  prescription_id  String?
+  invoice_id       String?                              // linked billing invoice
+  order_date       DateTime  @default(now())
+  status           String    @default("Pending")
+  // Status flow: Pending → Processing → Ready → Delivered | Cancelled
+  frame_brand      String?
+  frame_model      String?
+  frame_color      String?
+  lens_type        String?                              // Single | Bifocal | Progressive | Photochromic | BlueBlock
+  lens_material    String?                              // CR39 | Polycarbonate | Trivex | Hi-Index
+  coating          String?                              // AR | UV | Hardcoat | Mirror
+  tint             String?
+  total_amount     Float     @default(0)
+  advance_paid     Float     @default(0)
+  balance_due      Float     @default(0)
+  expected_delivery_date DateTime?
+  delivered_at     DateTime?
+  delivered_by     String?                              // User.id of staff who handed over the order
+  notes            String?
+  created_by       String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  prescription   OpticalPrescription? @relation(fields: [prescription_id], references: [id])
+  items          OpticalOrderItem[]
+
+  @@index([organizationId, order_date])
+  @@index([organizationId, status])
+  @@index([patient_id])
+  @@map("optical_orders")
+}
+
+model OpticalOrderItem {
+  id          Int    @id @default(autoincrement())
+  order_id    String
+  item_type   String                                    // Frame | Lens | Accessory | Service | Coating
+  item_name   String
+  item_code   String?
+  quantity    Int    @default(1)
+  unit_price  Float  @default(0)
+  discount    Float  @default(0)
+  gst_rate    Float  @default(0)
+  total_price Float  @default(0)
+
+  order OpticalOrder @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@map("optical_order_items")
+}
+
+// ========================================
+// MODULE — MIS Materialized Rollups
+// (populated nightly by /api/cron/mis-rollup)
+// ========================================
+
+model MISDailyBillingRollup {
+  id              String   @id @default(uuid())
+  organizationId  String
+  report_date     DateTime @db.Date                    // the calendar date this row covers
+  department      String                               // department name bucket
+  payer_type      String                               // cash | tpa | corporate | self
+  total_billed    Float    @default(0)
+  total_collected Float    @default(0)
+  invoice_count   Int      @default(0)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, report_date, department, payer_type])
+  @@index([organizationId, report_date])
+  @@map("mis_daily_billing_rollups")
+}
+
+model MISDailyPharmacyRollup {
+  id              String   @id @default(uuid())
+  organizationId  String
+  report_date     DateTime @db.Date
+  order_type      String                               // IP | OP
+  total_amount    Float    @default(0)
+  return_amount   Float    @default(0)
+  net_amount      Float    @default(0)
+  order_count     Int      @default(0)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, report_date, order_type])
+  @@index([organizationId, report_date])
+  @@map("mis_daily_pharmacy_rollups")
+}
+

@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
-
-const prisma = new PrismaClient();
 
 // A generic query factory for diagnostic appointments to reduce code duplication
 const createDiagnosticAppointmentQuery = (departmentKeyword: string) => async (filters: ValidatedFilters, orgId: string) => {
@@ -46,7 +44,7 @@ const defaultFilters = z.object({
 export const diagCardiologyAppointmentReport: ReportDefinition = {
   id: 'diagnostic-cardiology-appointment',
   category: ReportCategory.Diagnostic,
-  name: 'Diagnositc - Cardiology Appointment',
+  name: 'Diagnostic - Cardiology Appointment',
   description: 'Details of all cardiology diagnostic appointments booked.',
   filters: defaultFilters,
   columns: diagnosticAppointmentColumns,

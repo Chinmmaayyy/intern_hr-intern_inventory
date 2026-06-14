@@ -41,7 +41,8 @@ export type MISRole =
   | 'receptionist'
   | 'lab_technician'
   | 'pharmacist'
-  | 'ipd_manager';
+  | 'ipd_manager'
+  | 'ot_manager';
 
 // ─── Permission → Role mapping ────────────────────────────────────────────────
 
@@ -53,8 +54,14 @@ export type MISRole =
  * Permission tiers (additive):
  *   viewer          → read-only, non-sensitive billing & revenue data
  *   billing_officer → same as viewer (billing ops staff)
- *   finance         → viewer + revenue analytics
- *   admin           → all of the above + sensitive financial/payroll reports
+ *   finance         → viewer + revenue analytics + admission & inventory data
+ *   admin           → all of the above + sensitive financial/payroll/OT reports
+ *   ot_manager      → OT-specific reports only
+ *
+ * Granular specialized permissions (split from mis_reports.specialized.view):
+ *   mis_reports.ot.view        → OT Booking, Surgery Details, Surgery TAT
+ *   mis_reports.ambulance.view → Ambulance Orders, Request, TAT
+ *   mis_reports.optical.view   → Optical Billing, Settlement, Payment
  */
 export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
   admin: [
@@ -69,12 +76,16 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
     'mis_reports.diagnostic.view',
     'mis_reports.pharmacy.view',
     'mis_reports.inventory.view',
-    'mis_reports.specialized.view'
+    'mis_reports.ot.view',
+    'mis_reports.ambulance.view',
+    'mis_reports.optical.view',
   ],
   finance: [
     'mis_reports.billing.view',
     'mis_reports.revenue.view',
     'mis_reports.finance.view',
+    'mis_reports.admission.view',  // F3: bed-occupancy & discharge revenue data
+    'mis_reports.inventory.view',  // F3: stock valuation for asset reporting
   ],
   billing_officer: [
     'mis_reports.billing.view',
@@ -82,7 +93,7 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
   doctor: [
     'mis_reports.appointment.view',
     'mis_reports.diagnostic.view',
-    'mis_reports.specialized.view',
+    'mis_reports.ot.view',         // doctors need their own OT schedule visibility
   ],
   receptionist: [
     'mis_reports.registration.view',
@@ -100,7 +111,12 @@ export const ROLE_PERMISSIONS: Record<MISRole, string[]> = {
     'mis_reports.admission.view',
     'mis_reports.frontdesk.view',
     'mis_reports.billing.view',
-    'mis_reports.specialized.view',
+    'mis_reports.ot.view',
+    'mis_reports.ambulance.view',
+  ],
+  ot_manager: [
+    'mis_reports.ot.view',
+    'mis_reports.ambulance.view',  // OT coordinators also manage ambulance transport
   ],
   viewer: [
     'mis_reports.billing.view',

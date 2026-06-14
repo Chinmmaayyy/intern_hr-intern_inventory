@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
@@ -130,10 +129,10 @@ import {
   opticalDailySettlementSumReport,
   opticalPaymentReport
 } from './registry/specialized';
-import { ValidatedFilters } from './types';
+import { ValidatedFilters, ReportDefinition } from './types';
 
 // Add all reports to this registry map
-export const REGISTRY: Record<string, any> = {
+export const REGISTRY: Record<string, ReportDefinition> = {
   [dailyRevenueReport.id]: dailyRevenueReport,
   [billingDetailReport.id]: billingDetailReport,
   [billingItemDetailReport.id]: billingItemDetailReport,

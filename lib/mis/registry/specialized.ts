@@ -27,7 +27,7 @@ export const otBookingDetailsReport: ReportDefinition = {
   ],
   defaultSort: { column: 'scheduled_date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ot.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -67,7 +67,7 @@ export const otSurgeryDetailsReport: ReportDefinition = {
   ],
   defaultSort: { column: 'request_date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ot.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -111,7 +111,7 @@ export const otSurgeryTatReport: ReportDefinition = {
   ],
   defaultSort: { column: 'scheduled_date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ot.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -154,7 +154,7 @@ export const ambulanceOrdersReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ambulance.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -190,7 +190,7 @@ export const ambulanceRequestReport: ReportDefinition = {
   ],
   defaultSort: { column: 'request_date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ambulance.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -226,7 +226,7 @@ export const ambulanceTatReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.ambulance.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -265,7 +265,7 @@ export const opticalItemBillingReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -310,7 +310,7 @@ export const opticalProductBillingReport: ReportDefinition = {
   ],
   defaultSort: { column: 'total_revenue', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -354,7 +354,7 @@ export const opticalDailySettlementReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -397,7 +397,7 @@ export const opticalDailySettlementSumReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
@@ -443,7 +443,7 @@ export const opticalPaymentReport: ReportDefinition = {
   ],
   defaultSort: { column: 'billed_amount', direction: 'desc' },
   rowLimitSync: 5000,
-  requiredPermission: 'mis_reports.specialized.view',
+  requiredPermission: 'mis_reports.optical.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
