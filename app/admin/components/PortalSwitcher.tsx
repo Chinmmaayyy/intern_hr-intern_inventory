@@ -96,6 +96,7 @@ export default function PortalSwitcher({ collapsed }: { collapsed: boolean }) {
         <div ref={ref} className="relative">
             {/* Trigger Button */}
             <button
+                suppressHydrationWarning
                 onClick={() => { setOpen(!open); setExpandedRole(null); }}
                 title={collapsed ? 'Portal Access' : undefined}
                 className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-lg text-[13px] font-medium transition-all duration-150 text-gray-400 hover:text-white hover:bg-white/[0.06] ${collapsed ? 'justify-center px-2' : ''}`}
@@ -120,7 +121,7 @@ export default function PortalSwitcher({ collapsed }: { collapsed: boolean }) {
                             <LayoutGrid className="w-4 h-4 text-[#f97316]" />
                             <span className="text-sm font-semibold text-gray-900">Portal Access</span>
                         </div>
-                        <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
+                        <button suppressHydrationWarning onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
@@ -135,6 +136,7 @@ export default function PortalSwitcher({ collapsed }: { collapsed: boolean }) {
                             <div key={portal.role}>
                                 {/* Role Row */}
                                 <button
+                                    suppressHydrationWarning
                                     onClick={() => handleRoleClick(portal.role)}
                                     className="flex items-center gap-3 w-full px-4 py-2.5 hover:bg-white/[0.05] transition-colors group"
                                 >
@@ -160,6 +162,7 @@ export default function PortalSwitcher({ collapsed }: { collapsed: boolean }) {
                                                     No {portal.label.toLowerCase()}s registered
                                                 </p>
                                                 <button
+                                                    suppressHydrationWarning
                                                     onClick={() => handleOpenPortal(portal.path)}
                                                     className="flex items-center gap-2 w-full px-6 py-2 hover:bg-white/[0.05] transition-colors group"
                                                 >
@@ -174,6 +177,7 @@ export default function PortalSwitcher({ collapsed }: { collapsed: boolean }) {
                                         {/* Registered users */}
                                         {users[portal.role]?.map(user => (
                                             <button
+                                                suppressHydrationWarning
                                                 key={user.id}
                                                 onClick={() => user.is_active && handleImpersonate(user.id)}
                                                 disabled={!user.is_active || impersonating === user.id}

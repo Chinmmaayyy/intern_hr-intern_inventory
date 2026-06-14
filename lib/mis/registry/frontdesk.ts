@@ -156,6 +156,17 @@ export const appointmentReport: ReportDefinition = {
   ],
   defaultSort: { column: 'appointment_date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDoctor": true,
+    "showStatus": true,
+    "statusOptions": [
+      "Pending",
+      "Scheduled",
+      "COMPLETED",
+      "NO_SHOW",
+      "Cancelled"
+    ]
+  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id, status } = filters;
@@ -200,6 +211,9 @@ export const doctorEventOffReport: ReportDefinition = {
   ],
   defaultSort: { column: 'event_date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDoctor": true
+  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id } = filters;
@@ -241,6 +255,9 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
   ],
   defaultSort: { column: 'total_events', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDepartment": true
+  },
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, department_id } = filters;

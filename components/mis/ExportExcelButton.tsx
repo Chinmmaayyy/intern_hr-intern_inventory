@@ -344,6 +344,7 @@ export function ExportExcelButton({
         <div className={`inline-flex flex-col items-end gap-1 ${className}`}>
             <button
                 type="button"
+                suppressHydrationWarning
                 onClick={handleExport}
                 disabled={isLoading}
                 aria-label={

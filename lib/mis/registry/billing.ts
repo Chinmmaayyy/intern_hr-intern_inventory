@@ -27,6 +27,9 @@ export const dailyRevenueReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDepartment": true
+  },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id, department_id } = filters;
@@ -87,6 +90,7 @@ export const billingDetailReport: ReportDefinition = {
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
     department_id: z.string().optional(),
+    bill_type: z.string().optional(),
   }),
   columns: [
     { key: 'date', label: 'Date', type: 'date' },
@@ -98,9 +102,13 @@ export const billingDetailReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
+  filterSpec: {
+    showDepartment: true,
+    showBillType: true,
+  },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end, department_id } = filters;
+    const { date_start, date_end, department_id, bill_type } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(i.created_at) as "date",
@@ -116,6 +124,7 @@ export const billingDetailReport: ReportDefinition = {
         AND i.created_at >= ${new Date(date_start)}
         AND i.created_at <= ${new Date(date_end)}
         ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
+        ${bill_type ? Prisma.sql`AND i.billing_patient_type = ${bill_type}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC, i.invoice_number ASC
     `;
 
@@ -141,7 +150,7 @@ export const billingDetailReport: ReportDefinition = {
   // invoice_items is a large table; for a wide date range this can easily
   // exceed rowLimitSync (5000), which is why this report defines countFn.
   countFn: async (filters: ValidatedFilters, orgId: string): Promise<number> => {
-    const { date_start, date_end, department_id } = filters;
+    const { date_start, date_end, department_id, bill_type } = filters;
     const result = await prisma.$queryRaw<[{ count: bigint }]>`
       SELECT COUNT(*) as "count"
       FROM invoice_items ii
@@ -151,6 +160,7 @@ export const billingDetailReport: ReportDefinition = {
         AND i.created_at >= ${new Date(date_start)}
         AND i.created_at <= ${new Date(date_end)}
         ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
+        ${bill_type ? Prisma.sql`AND i.billing_patient_type = ${bill_type}` : Prisma.empty}
     `;
     // $queryRaw returns BigInt for COUNT — convert to Number for the runner.
     return Number(result[0]?.count ?? 0);
@@ -480,6 +490,9 @@ export const billingAdmissionAdvanceReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDepartment": true
+  },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, department_id } = filters;
@@ -724,6 +737,9 @@ export const billingOpRefundReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDepartment": true
+  },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, department_id } = filters;
@@ -861,6 +877,9 @@ export const billingDoctorPayoutReport: ReportDefinition = {
   ],
   defaultSort: { column: 'date', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDoctor": true
+  },
   requiredPermission: 'mis_reports.billing.admin',  // Doctor payroll data — finance/admin only
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, doctor_id } = filters;

@@ -47,6 +47,7 @@ import toast from 'react-hot-toast';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
 import { ExportExcelButton } from '@/components/mis/ExportExcelButton';
 import { ExportPDFButton } from '@/components/mis/ExportPDFButton';
+import { MISScheduleModal } from '@/components/mis/MISScheduleModal';
 import {
     BarChart3, ChevronDown, ChevronLeft, ChevronRight,
     Inbox, Clock4, ShieldOff, X, Download, Loader2,
@@ -55,7 +56,7 @@ import { generateReport, getReportColumns } from '@/app/actions/mis-report-actio
 
 // `import type` is critical here: ColumnSpec lives in a file that also imports
 // `z` from zod. Using `import type` guarantees zero runtime Zod bundling.
-import type { ColumnSpec } from '@/lib/mis/types';
+import type { ColumnSpec, FilterSpec } from '@/lib/mis/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,7 @@ export interface UniversalReportShellProps {
      * Source: ReportDefinition.drillDownKey from the registry.
      */
     drillDownKey?: string;
+    filterSpec?: FilterSpec;
 }
 
 // ─── Cell formatters ──────────────────────────────────────────────────────────
@@ -185,12 +187,19 @@ export function UniversalReportShell({
     payload,
     drillDownTo,
     drillDownKey,
+    filterSpec,
 }: UniversalReportShellProps) {
     const searchParams = useSearchParams();
+    const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
     // Read URL params — written by MISFilterEngine via router.push()
     const startDate = searchParams.get('startDate') ?? '';
     const endDate   = searchParams.get('endDate')   ?? '';
+    const doctor    = searchParams.get('doctor')    ?? '';
+    const department_id = searchParams.get('department_id') ?? '';
+    const bill_type     = searchParams.get('bill_type') ?? '';
+    const statusVal     = searchParams.get('status') ?? '';
+    const store_id      = searchParams.get('store_id') ?? '';
 
     // ── 0. Access Denied state ───────────────────────────────────────────────
     // generateReport() returns { error: 'UNAUTHORIZED' } instead of throwing
@@ -237,13 +246,18 @@ export function UniversalReportShell({
     const exportFilters = {
         date_start: startDate || undefined,
         date_end:   endDate   || undefined,
+        doctor_id: doctor || undefined,
+        department_id: department_id || undefined,
+        bill_type: bill_type || undefined,
+        status: statusVal || undefined,
+        store_id: store_id || undefined,
     };
 
     // ── 5. Empty state ───────────────────────────────────────────────────────
     if (rows.length === 0) {
         return (
             <div className="space-y-5">
-                <MISFilterEngine doctorOptions={[]} showDoctorFilter={false} />
+                <MISFilterEngine reportId={reportId} doctorOptions={[]} showDoctorFilter={false} filterSpec={filterSpec} />
                 <EmptyState />
             </div>
         );
@@ -261,6 +275,9 @@ export function UniversalReportShell({
             exportFilters={exportFilters}
             drillDownTo={drillDownTo}
             drillDownKey={drillDownKey}
+            filterSpec={filterSpec}
+            isScheduleOpen={isScheduleOpen}
+            setIsScheduleOpen={setIsScheduleOpen}
         />
     );
 }
@@ -285,6 +302,9 @@ interface DrillDownWrapperProps {
     exportFilters:        { date_start?: string; date_end?: string };
     drillDownTo?:         string;
     drillDownKey?:        string;
+    filterSpec?:          FilterSpec;
+    isScheduleOpen:       boolean;
+    setIsScheduleOpen:    React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 // ─── Pagination constants ─────────────────────────────────────────────────────
@@ -310,6 +330,9 @@ function DrillDownWrapper({
     exportFilters,
     drillDownTo,
     drillDownKey,
+    filterSpec,
+    isScheduleOpen,
+    setIsScheduleOpen,
 }: DrillDownWrapperProps) {
     // ── Drill-Down state ─────────────────────────────────────────────────────
     const [drillRow,     setDrillRow]     = useState<Record<string, unknown> | null>(null);
@@ -409,8 +432,8 @@ function DrillDownWrapper({
     return (
         <div className="space-y-5">
 
-            {/* ── Filter Engine (date-only; doctor select suppressed) ────────── */}
-            <MISFilterEngine doctorOptions={[]} showDoctorFilter={false} />
+            {/* 🎯 Filter Engine (date-only; doctor select suppressed) 🎯 */}
+            <MISFilterEngine reportId={reportId} doctorOptions={[]} showDoctorFilter={false} filterSpec={filterSpec} />
 
             {/* ── Data Table Card ─────────────────────────────────────────────── */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -447,6 +470,15 @@ function DrillDownWrapper({
                             rows={rows}
                             totals={totals}
                         />
+                        <button
+                            suppressHydrationWarning
+                            onClick={() => setIsScheduleOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-stone-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                            aria-label="Schedule Delivery"
+                        >
+                            <Clock4 className="h-3.5 w-3.5" />
+                            Schedule
+                        </button>
                         <ExportExcelButton
                             reportId={reportId}
                             filters={exportFilters}
@@ -599,6 +631,14 @@ function DrillDownWrapper({
                     onClose={handleDrillClose}
                 />
             )}
+            
+            {isScheduleOpen && (
+                <MISScheduleModal
+                    reportId={reportId}
+                    currentFilters={exportFilters}
+                    onClose={() => setIsScheduleOpen(false)}
+                />
+            )}
         </div>
     );
 }
@@ -698,6 +738,7 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
             {/* Page buttons */}
             <div className="flex items-center gap-1">
                 <button
+                    suppressHydrationWarning
                     type="button"
                     onClick={onPrev}
                     disabled={current === 1}
@@ -712,6 +753,7 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
                         <span key={`gap-${i}`} className="text-[12px] text-gray-300 px-1 select-none">…</span>
                     ) : (
                         <button
+                            suppressHydrationWarning
                             key={p}
                             type="button"
                             onClick={() => onPage(p as number)}
@@ -729,6 +771,7 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
                 )}
 
                 <button
+                    suppressHydrationWarning
                     type="button"
                     onClick={onNext}
                     disabled={current === total}

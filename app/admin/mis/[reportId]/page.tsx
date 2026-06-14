@@ -98,6 +98,10 @@ function buildFilters(sp: { [key: string]: string | string[] | undefined }): Rec
         date_end: raw('endDate') ?? iso(today),
         branch_id: raw('branch_id'),      // reserved — multi-branch
         department_id: raw('department_id'),  // reserved — department filter
+        doctor_id: raw('doctor'),         // Note: MISFilterEngine writes 'doctor' to URL
+        bill_type: raw('bill_type'),
+        status: raw('status'),
+        store_id: raw('store_id'),
     };
 }
 
@@ -150,7 +154,7 @@ export default async function DynamicReportPage({ params, searchParams }: PagePr
     // Client Component without any stripping.
     // `reportDef.filters` (ZodSchema) is intentionally NOT passed.
     // `drillDownTo` / `drillDownKey` are optional strings — safe to pass.
-    const { name: reportName, columns, drillDownTo, drillDownKey } = reportDef;
+    const { name: reportName, columns, drillDownTo, drillDownKey, filterSpec } = reportDef;
 
     return (
         <AdminPage
@@ -169,6 +173,7 @@ export default async function DynamicReportPage({ params, searchParams }: PagePr
                     payload={payload!}
                     drillDownTo={drillDownTo}
                     drillDownKey={drillDownKey}
+                    filterSpec={filterSpec}
                 />
             </Suspense>
         </AdminPage>

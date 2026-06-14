@@ -129,6 +129,7 @@ export async function PortalMISViewerPage({
                     payload={payload}
                     drillDownTo={reportDef.drillDownTo}
                     drillDownKey={reportDef.drillDownKey}
+                    filterSpec={reportDef.filterSpec}
                 />
             </Suspense>
         </div>

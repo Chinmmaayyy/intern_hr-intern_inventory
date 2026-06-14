@@ -106,6 +106,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
                     </div>
                 )}
                 <button
+                    suppressHydrationWarning
                     onClick={() => setMobileOpen(false)}
                     className="lg:hidden ml-auto p-1 text-gray-500 hover:text-gray-900 transition-colors"
                 >
@@ -122,6 +123,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
                             {!collapsed && (
                                 section.collapsible ? (
                                     <button
+                                        suppressHydrationWarning
                                         onClick={() => toggleSection(section.title)}
                                         className="flex items-center justify-between w-full px-2.5 mb-1.5 group"
                                     >
@@ -175,6 +177,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
             <div className="px-2.5 py-3 space-y-1 shrink-0" style={{ borderTop: '1px solid var(--admin-sidebar-border)' }}>
                 <PortalSwitcher collapsed={collapsed} />
                 <button
+                    suppressHydrationWarning
                     onClick={() => { setShowChangePassword(true); setMobileOpen(false); }}
                     title={collapsed ? 'Change Password' : undefined}
                     className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-lg text-[13px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''}`}
@@ -183,6 +186,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
                     {!collapsed && <span>Change Password</span>}
                 </button>
                 <button
+                    suppressHydrationWarning
                     onClick={() => logout()}
                     title={collapsed ? 'Logout' : undefined}
                     className={`flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-lg text-[13px] font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''}`}
@@ -191,6 +195,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
                     {!collapsed && <span>Logout</span>}
                 </button>
                 <button
+                    suppressHydrationWarning
                     onClick={() => setCollapsed(!collapsed)}
                     className={`hidden lg:flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-lg text-[13px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all duration-150 ${collapsed ? 'justify-center px-2' : ''}`}
                 >
@@ -207,6 +212,7 @@ export default function AdminSidebar({ userRole }: { userRole?: string }) {
 
             {/* Mobile hamburger */}
             <button
+                suppressHydrationWarning
                 onClick={() => setMobileOpen(true)}
                 className="lg:hidden fixed top-3 left-3 z-50 p-2 bg-white rounded-xl shadow-md border border-gray-200/60 text-gray-600 hover:bg-gray-50 transition-all"
             >

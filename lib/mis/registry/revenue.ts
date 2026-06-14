@@ -178,6 +178,9 @@ export const revenueServiceTypeWiseReport: ReportDefinition = {
   ],
   defaultSort: { column: 'gross_revenue', direction: 'desc' },
   rowLimitSync: 5000,
+    filterSpec: {
+    "showDepartment": true
+  },
   requiredPermission: 'mis_reports.revenue.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, department_id } = filters;

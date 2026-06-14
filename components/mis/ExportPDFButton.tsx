@@ -90,6 +90,7 @@ export function ExportPDFButton({ reportName, columns, rows, totals }: ExportPDF
     return (
         <button
             type="button"
+            suppressHydrationWarning
             onClick={handleExportPDF}
             disabled={generating || rows.length === 0}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 hover:border-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

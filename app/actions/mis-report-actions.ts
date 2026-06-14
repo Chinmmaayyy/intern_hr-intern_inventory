@@ -594,3 +594,106 @@ export async function getReportColumns(
 
   return { columns: reportDef.columns, name: reportDef.name };
 }
+
+
+// ─── Presets (Phase E1) ────────────────────────────────────────────────────────
+
+export async function getPresets(reportId?: string) {
+  const session = await getSession();
+  const whereClause: any = {
+    organizationId: session.orgId,
+    OR: [
+      { user_id: session.userId },
+      { is_shared: true }
+    ]
+  };
+  if (reportId) {
+    whereClause.report_id = reportId;
+  }
+  const presets = await prisma.reportPreset.findMany({
+    where: whereClause,
+    orderBy: { createdAt: 'desc' }
+  });
+  return presets;
+}
+
+export async function savePreset(data: { report_id: string; name: string; filters_json: any; is_shared?: boolean }) {
+  const session = await getSession();
+  const preset = await prisma.reportPreset.create({
+    data: {
+      report_id: data.report_id,
+      name: data.name,
+      filters_json: data.filters_json,
+      is_shared: Boolean(data.is_shared),
+      user_id: session.userId,
+      organizationId: session.orgId
+    }
+  });
+  return preset;
+}
+
+export async function updatePreset(id: string, data: { name?: string; is_shared?: boolean }) {
+  const session = await getSession();
+  const preset = await prisma.reportPreset.findUnique({ where: { id } });
+  if (!preset) throw new Error('Preset not found');
+  if (preset.user_id !== session.userId || preset.organizationId !== session.orgId) {
+    throw new Error('Forbidden: Only the owner can modify this preset');
+  }
+  const updated = await prisma.reportPreset.update({
+    where: { id },
+    data: {
+      name: data.name !== undefined ? data.name : preset.name,
+      is_shared: data.is_shared !== undefined ? Boolean(data.is_shared) : preset.is_shared,
+    }
+  });
+  return updated;
+}
+
+export async function deletePreset(id: string) {
+  const session = await getSession();
+  const preset = await prisma.reportPreset.findUnique({ where: { id } });
+  if (!preset) throw new Error('Preset not found');
+  if (preset.user_id !== session.userId || preset.organizationId !== session.orgId) {
+    throw new Error('Forbidden: Only the owner can delete this preset');
+  }
+  await prisma.reportPreset.delete({ where: { id } });
+  return { success: true };
+}
+
+
+// ─── Schedules (Phase E2) ──────────────────────────────────────────────────────
+
+export async function saveSchedule(data: {
+  report_id: string;
+  preset_id?: string;
+  filters_json?: any;
+  cron_spec: string;
+  format: string;
+  recipients_json: any;
+  channel: string;
+}) {
+  const session = await getSession();
+  
+  // Calculate first run
+  const cronParser = require('cron-parser');
+  const parseCron = cronParser.parseExpression || (cronParser.default && cronParser.default.parse) || cronParser.parse;
+  const interval = parseCron(data.cron_spec);
+  const nextRunAt = interval.next().toDate();
+
+  const schedule = await prisma.reportSchedule.create({
+    data: {
+      report_id: data.report_id,
+      preset_id: data.preset_id || null,
+      filters_json: data.filters_json || null,
+      cron_spec: data.cron_spec,
+      format: data.format,
+      recipients_json: data.recipients_json,
+      channel: data.channel,
+      is_active: true,
+      next_run_at: nextRunAt,
+      owner_user_id: session.userId,
+      organizationId: session.orgId
+    }
+  });
+  return schedule;
+}

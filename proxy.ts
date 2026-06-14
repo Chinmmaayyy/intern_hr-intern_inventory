@@ -94,7 +94,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/zealthix/") ||
     pathname.startsWith("/api/public/") ||
     pathname.startsWith("/api/patient/self-register") ||
-    pathname.startsWith("/api/dev/")
+    pathname.startsWith("/api/dev/") ||
+    pathname.startsWith("/api/cron/")
   ) {
     return NextResponse.next();
   }

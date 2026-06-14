@@ -57,7 +57,7 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
         title: 'Reports & MIS',
         collapsible: true,
         items: [
-            { label: 'Daily Revenue', href: '/admin/mis/revenue/daily', icon: BarChart3 },
+
             { label: 'MIS Reports', href: '/admin/mis-reports', icon: LineChart },
         ],
     },

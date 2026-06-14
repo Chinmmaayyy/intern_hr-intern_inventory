@@ -15,6 +15,15 @@ export enum ReportCategory {
   Daily_Revenue = 'Daily Revenue',
 }
 
+export interface FilterSpec {
+  showDepartment?: boolean;
+  showDoctor?:     boolean;
+  showBillType?:   boolean;  // Cash | TPA | Corporate | All
+  showStatus?:     boolean;
+  showStore?:      boolean;
+  statusOptions?:  string[]; // e.g. ['Pending', 'Completed', 'Cancelled']
+}
+
 export interface ColumnSpec {
   key: string;
   label: string;
@@ -74,6 +83,7 @@ export interface ReportDefinition {
    * @returns        Estimated row count (number, not BigInt).
    */
   countFn?: (filters: ValidatedFilters, orgId: string) => Promise<number>;
+  filterSpec?: FilterSpec;             // dynamic filter options
   chartSpec?: ChartSpec;               // optional Chart.js spec for visual reports
   drillDownTo?:  string;               // report_id of the detail report for drill-down
   drillDownKey?: string;               // row field whose value is forwarded as filter param to drillDownTo
