@@ -361,7 +361,7 @@ export const opticalItemBillingReport: ReportDefinition = {
         oi.total_price                                     AS "total_amount"
       FROM "optical_order_items" oi
       JOIN "optical_orders"      oo ON oi.order_id = oo.id
-      LEFT JOIN "invoices"        i  ON oo.invoice_id = i.id
+      LEFT JOIN "invoices"        i  ON oo.invoice_id = i.id::text
       WHERE oo."organizationId" = ${orgId}
         AND oo.order_date >= ${new Date(date_start)}
         AND oo.order_date <= ${new Date(date_end)}
@@ -468,7 +468,7 @@ export const opticalDailySettlementReport: ReportDefinition = {
         p.payment_method                                   AS "payment_method",
         p.amount                                           AS "settled_amount"
       FROM "optical_orders" oo
-      JOIN "invoices"  i  ON oo.invoice_id = i.id
+      JOIN "invoices"  i  ON oo.invoice_id = i.id::text
       JOIN "payments"  p  ON p.invoice_id  = i.id
       WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
@@ -513,7 +513,7 @@ export const opticalDailySettlementSumReport: ReportDefinition = {
         COUNT(DISTINCT oo.id)                              AS "order_count",
         SUM(p.amount)                                      AS "total_settled"
       FROM "optical_orders" oo
-      JOIN "invoices"  i  ON oo.invoice_id = i.id
+      JOIN "invoices"  i  ON oo.invoice_id = i.id::text
       JOIN "payments"  p  ON p.invoice_id  = i.id
       WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
@@ -579,7 +579,7 @@ export const opticalPaymentReport: ReportDefinition = {
           (
             SELECT p2.payment_method
             FROM   "payments" p2
-            WHERE  p2.invoice_id = oo.invoice_id
+            WHERE  p2.invoice_id::text = oo.invoice_id
               AND  p2.status = 'Completed'
             ORDER  BY p2.created_at DESC
             LIMIT  1
