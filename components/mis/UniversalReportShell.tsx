@@ -192,69 +192,96 @@ export function UniversalReportShell({
     const searchParams = useSearchParams();
     const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
-    // Read URL params — written by MISFilterEngine via router.push()
-    const startDate = searchParams.get('startDate') ?? '';
-    const endDate   = searchParams.get('endDate')   ?? '';
-    const doctor    = searchParams.get('doctor')    ?? '';
-    const department_id = searchParams.get('department_id') ?? '';
-    const bill_type     = searchParams.get('bill_type') ?? '';
-    const statusVal     = searchParams.get('status') ?? '';
-    const store_id      = searchParams.get('store_id') ?? '';
+    // ── Bug 1 fix: live payload state — initialized from SSR, updated on re-fetch ──
+    const [livePayload, setLivePayload]   = useState<UniversalPayload>(payload);
+    const [isRefetching, setIsRefetching] = useState(false);
+    const isMounted = useRef(false);
 
-    // ── 0. Access Denied state ───────────────────────────────────────────────
-    // generateReport() returns { error: 'UNAUTHORIZED' } instead of throwing
-    // so Next.js never reaches its error boundary. We catch it here and show
-    // a polite, informative UI rather than a blank page or a crash.
-    if (payload.error === 'UNAUTHORIZED') {
+    // Read URL params — written by MISFilterEngine via router.push()
+    const startDate       = searchParams.get('startDate') ?? '';
+    const endDate         = searchParams.get('endDate')   ?? '';
+    const doctor          = searchParams.get('doctor')    ?? '';
+    const department_id   = searchParams.get('department_id') ?? '';
+    const bill_type       = searchParams.get('bill_type') ?? '';
+    const statusVal       = searchParams.get('status') ?? '';
+    const store_id        = searchParams.get('store_id') ?? '';
+    const branch_id       = searchParams.get('branch_id') ?? '';
+    const service_category = searchParams.get('service_category') ?? '';
+
+    // Serialise ALL current params into a stable string for the useEffect dep.
+    const searchParamsKey = searchParams.toString();
+
+    useEffect(() => {
+        if (!isMounted.current) {
+            isMounted.current = true;
+            return;
+        }
+
+        const currentFilters: Record<string, string | undefined> = {
+            date_start:       startDate       || undefined,
+            date_end:         endDate         || undefined,
+            doctor_id:        doctor          || undefined,
+            department_id:    department_id   || undefined,
+            bill_type:        bill_type       || undefined,
+            status:           statusVal       || undefined,
+            store_id:         store_id        || undefined,
+            branch_id:        branch_id       || undefined,
+            service_category: service_category || undefined,
+        };
+
+        setIsRefetching(true);
+        generateReport(reportId, currentFilters)
+            .then((result) => {
+                setLivePayload(result as UniversalPayload);
+            })
+            .catch((err) => {
+                console.error('[MIS Shell] Re-fetch failed:', err);
+            })
+            .finally(() => {
+                setIsRefetching(false);
+            });
+    }, [searchParamsKey, reportId, startDate, endDate, doctor, department_id, bill_type, statusVal, store_id, branch_id, service_category]);
+
+    useEffect(() => {
+        setLivePayload(payload);
+    }, [payload]);
+
+    if (livePayload.error === 'UNAUTHORIZED') {
         return <AccessDeniedState />;
     }
 
-    // ── 1. Async/queued state ────────────────────────────────────────────────
-    if (payload.async) {
-        return <AsyncQueuedBanner jobId={payload.jobId} />;
+    if (livePayload.async) {
+        return <AsyncQueuedBanner jobId={livePayload.jobId} />;
     }
 
-    const rows   = payload.rows   ?? [];
-    const totals = payload.totals ?? {};
+    const rows   = livePayload.rows   ?? [];
+    const totals = livePayload.totals ?? {};
 
-    // ── 2. Compute tfoot visibility ──────────────────────────────────────────
-    // Show the totals row only if at least one column declares total:'sum' or
-    // total:'avg' AND the server actually sent back a totals object.
     const hasSumColumns = columns.some((c) => c.total);
     const showTotalsRow = hasSumColumns && Object.keys(totals).length > 0;
 
-    // ── 3. Compute leading non-total span for the Grand Total label ──────────
-    // We find how many consecutive leading columns have no total definition.
-    // Those columns are merged into a single colSpan cell that carries the
-    // "Grand Total (N rows)" label, matching the pattern in RevenueTable.tsx.
-    //
-    // Edge case: if the very first column has a total (unusual but possible),
-    // we use colSpan=1 and show the label in that first cell.
     const leadingNonTotalCount = useMemo(() => {
         let count = 0;
         for (const col of columns) {
             if (col.total) break;
             count++;
         }
-        return Math.max(count, 1); // Always at least 1
+        return Math.max(count, 1);
     }, [columns]);
 
-    // ── 4. Export filters — re-map URL keys to Zod filter keys ──────────────
-    // MISFilterEngine writes startDate/endDate to the URL.
-    // exportReportToExcel → runner → reportDef.filters.safeParse expects
-    // date_start/date_end (the Zod schema keys). We remap here.
     const exportFilters = {
-        date_start: startDate || undefined,
-        date_end:   endDate   || undefined,
-        doctor_id: doctor || undefined,
-        department_id: department_id || undefined,
-        bill_type: bill_type || undefined,
-        status: statusVal || undefined,
-        store_id: store_id || undefined,
+        date_start:       startDate       || undefined,
+        date_end:         endDate         || undefined,
+        doctor_id:        doctor          || undefined,
+        department_id:    department_id   || undefined,
+        bill_type:        bill_type       || undefined,
+        status:           statusVal       || undefined,
+        store_id:         store_id        || undefined,
+        branch_id:        branch_id       || undefined,
+        service_category: service_category || undefined,
     };
 
-    // ── 5. Empty state ───────────────────────────────────────────────────────
-    if (rows.length === 0) {
+    if (rows.length === 0 && !isRefetching) {
         return (
             <div className="space-y-5">
                 <MISFilterEngine reportId={reportId} doctorOptions={[]} showDoctorFilter={false} filterSpec={filterSpec} />
@@ -299,12 +326,14 @@ interface DrillDownWrapperProps {
     totals:               Record<string, number>;
     showTotalsRow:        boolean;
     leadingNonTotalCount: number;
-    exportFilters:        { date_start?: string; date_end?: string };
+    exportFilters:        Record<string, string | undefined>;
     drillDownTo?:         string;
     drillDownKey?:        string;
     filterSpec?:          FilterSpec;
     isScheduleOpen:       boolean;
     setIsScheduleOpen:    React.Dispatch<React.SetStateAction<boolean>>;
+    // Bug 1 fix: show a subtle overlay while a client-side re-fetch is in progress
+    isRefetching?:        boolean;
 }
 
 // ─── Pagination constants ─────────────────────────────────────────────────────
@@ -333,6 +362,7 @@ function DrillDownWrapper({
     filterSpec,
     isScheduleOpen,
     setIsScheduleOpen,
+    isRefetching,
 }: DrillDownWrapperProps) {
     // ── Drill-Down state ─────────────────────────────────────────────────────
     const [drillRow,     setDrillRow]     = useState<Record<string, unknown> | null>(null);
@@ -344,6 +374,44 @@ function DrillDownWrapper({
 
     // ── Gap #13: Pagination state for the main table ─────────────────────────
     const [currentPage, setCurrentPage] = useState(1);
+
+    // ── Feature: Column-level client-side sort ────────────────────────────
+    // Sorting is applied client-side over the full rows array (all rows are
+    // already in memory, max rowLimitSync = 5000). No re-fetch is needed.
+    const [sortCol, setSortCol] = useState<string | null>(null);
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+    const handleSort = useCallback((colKey: string) => {
+        setSortCol((prev) => {
+            if (prev === colKey) {
+                setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+                return colKey;
+            }
+            setSortDir('asc');
+            return colKey;
+        });
+        setCurrentPage(1);
+    }, []);
+
+    // Derive sorted rows; memoized so we only re-sort when rows or sort state change.
+    const sortedRows = useMemo(() => {
+        if (!sortCol) return rows;
+        const colDef    = columns.find((c) => c.key === sortCol);
+        const isNumeric = colDef?.type === 'currency' || colDef?.type === 'number' || colDef?.type === 'percent';
+        return [...rows].sort((a, b) => {
+            const av  = a[sortCol];
+            const bv  = b[sortCol];
+            const cmp = isNumeric
+                ? Number(av ?? 0) - Number(bv ?? 0)
+                : String(av ?? '').localeCompare(String(bv ?? ''), 'en-IN');
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+    }, [rows, sortCol, sortDir, columns]);
+
+    // Reset to page 1 when the rows array reference changes (new fetch data in).
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [rows]);
 
     /**
      * Called when the user clicks a summary row while drillDownTo is set.
@@ -422,12 +490,12 @@ function DrillDownWrapper({
     }, []);
 
     // ── Gap #13: Pagination helpers ──────────────────────────────────────────
-    const totalPages    = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    const totalPages    = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
     // Clamp: if rows shrink (e.g. filter change), stay in bounds.
     const safePage      = Math.min(currentPage, totalPages);
     const pageStart     = (safePage - 1) * PAGE_SIZE;
-    const pagedRows     = rows.slice(pageStart, pageStart + PAGE_SIZE);
-    const showPaginator = rows.length > PAGE_SIZE;
+    const pagedRows     = sortedRows.slice(pageStart, pageStart + PAGE_SIZE);
+    const showPaginator = sortedRows.length > PAGE_SIZE;
 
     return (
         <div className="space-y-5">
@@ -452,12 +520,19 @@ function DrillDownWrapper({
                                 Expandable
                             </span>
                         )}
+                        {/* Bug 1 fix: subtle loading badge during client-side re-fetch */}
+                        {isRefetching && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-600 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-full animate-pulse">
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                Refreshing…
+                            </span>
+                        )}
                     </div>
 
                     {/* Right controls: row count pill + export button */}
                     <div className="flex items-center gap-3 shrink-0">
                         <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
-                            {rows.length} {rows.length === 1 ? 'row' : 'rows'}
+                            {sortedRows.length} {sortedRows.length === 1 ? 'row' : 'rows'}
                             {showPaginator && (
                                 <span className="ml-1 text-gray-300 font-medium">
                                     — page {safePage}/{totalPages}
@@ -493,20 +568,60 @@ function DrillDownWrapper({
                         {/* ── thead ──────────────────────────────────────────── */}
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-100">
-                                {columns.map((col) => (
-                                    <th
-                                        key={col.key}
-                                        scope="col"
-                                        className={`
-                                            px-5 py-3
-                                            text-[10px] font-bold uppercase tracking-widest
-                                            text-gray-500 whitespace-nowrap select-none
-                                            ${ALIGN_CLASS[effectiveAlign(col)]}
-                                        `}
-                                    >
-                                        {col.label}
-                                    </th>
-                                ))}
+                                {columns.map((col) => {
+                                    const isActiveSort = sortCol === col.key;
+                                    const align = effectiveAlign(col);
+                                    return (
+                                        <th
+                                            key={col.key}
+                                            scope="col"
+                                            className={`
+                                                px-5 py-3
+                                                text-[10px] font-bold uppercase tracking-widest
+                                                text-gray-500 whitespace-nowrap select-none
+                                                ${ALIGN_CLASS[align]}
+                                            `}
+                                        >
+                                            {/* Feature: clickable sort button on every column header */}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort(col.key)}
+                                                className={`
+                                                    inline-flex items-center gap-1 group
+                                                    hover:text-emerald-600 transition-colors
+                                                    ${isActiveSort ? 'text-emerald-600' : 'text-gray-500'}
+                                                `}
+                                                aria-label={`Sort by ${col.label} ${
+                                                    isActiveSort
+                                                        ? sortDir === 'asc' ? 'descending' : 'ascending'
+                                                        : 'ascending'
+                                                }`}
+                                            >
+                                                {col.label}
+                                                <span className={`flex flex-col gap-px ml-0.5 transition-opacity ${
+                                                    isActiveSort ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'
+                                                }`}>
+                                                    <ChevronLeft
+                                                        className={`h-2 w-2 -rotate-90 ${
+                                                            isActiveSort && sortDir === 'asc'
+                                                                ? 'text-emerald-600'
+                                                                : 'text-gray-400'
+                                                        }`}
+                                                        aria-hidden="true"
+                                                    />
+                                                    <ChevronRight
+                                                        className={`h-2 w-2 -rotate-90 ${
+                                                            isActiveSort && sortDir === 'desc'
+                                                                ? 'text-emerald-600'
+                                                                : 'text-gray-400'
+                                                        }`}
+                                                        aria-hidden="true"
+                                                    />
+                                                </span>
+                                            </button>
+                                        </th>
+                                    );
+                                })}
                             </tr>
                         </thead>
 

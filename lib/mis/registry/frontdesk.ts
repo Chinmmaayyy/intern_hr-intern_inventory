@@ -5,6 +5,21 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+// Problem: new Date('2026-06-15') parses as 2026-06-15T00:00:00.000Z (UTC midnight).
+// For IST (+05:30) deployments this is actually 05:30 IST — so any invoices /
+// appointments created from 00:00:00 to 05:29:59 IST (which are BEFORE midnight UTC)
+// are missed by the date_start bound, and anything after 00:00:00Z on the NEXT day
+// is excluded by date_end. This produces near-empty exports for single-day reports.
+//
+// Fix: expand bare YYYY-MM-DD strings to T00:00:00.000Z / T23:59:59.999Z explicitly.
+// ISO datetime strings that already carry a T component are left unchanged so that
+// drill-down calls (which already pass correct ISO strings) are not double-offset.
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 export const preRegistrationReport: ReportDefinition = {
   id: 'frontdesk-pre-registration',
   category: ReportCategory.Registration,
@@ -38,8 +53,8 @@ export const preRegistrationReport: ReportDefinition = {
         status as "status"
       FROM "CRMLead"
       WHERE "organizationId" = ${orgId}
-        AND created_at >= ${new Date(date_start)}
-        AND created_at <= ${new Date(date_end)}
+        AND created_at >= ${toStartOfDay(date_start)}
+        AND created_at <= ${toEndOfDay(date_end)}
         ${source ? Prisma.sql`AND source = ${source}` : Prisma.empty}
       ORDER BY created_at DESC
     `;
@@ -80,8 +95,8 @@ export const registrationConvertReport: ReportDefinition = {
       LEFT JOIN "users" u ON c.assigned_to = u.id
       WHERE c."organizationId" = ${orgId}
         AND c.converted_at IS NOT NULL
-        AND c.converted_at >= ${new Date(date_start)}
-        AND c.converted_at <= ${new Date(date_end)}
+        AND c.converted_at >= ${toStartOfDay(date_start)}
+        AND c.converted_at <= ${toEndOfDay(date_end)}
       ORDER BY c.converted_at DESC
     `;
 
@@ -125,8 +140,8 @@ export const registrationReport: ReportDefinition = {
       FROM "OPD_REG" o
       LEFT JOIN "users" u ON o.employee_id = u.id
       WHERE o."organizationId" = ${orgId}
-        AND o.created_at >= ${new Date(date_start)}
-        AND o.created_at <= ${new Date(date_end)}
+        AND o.created_at >= ${toStartOfDay(date_start)}
+        AND o.created_at <= ${toEndOfDay(date_end)}
         ${user_id ? Prisma.sql`AND o.employee_id = ${user_id}` : Prisma.empty}
       ORDER BY o.created_at DESC
     `;
@@ -175,8 +190,8 @@ export const appointmentReport: ReportDefinition = {
       FROM "appointments" a
       LEFT JOIN "OPD_REG" p ON a.patient_id = p.patient_id
       WHERE a."organizationId" = ${orgId}
-        AND a.appointment_date >= ${new Date(date_start)}
-        AND a.appointment_date <= ${new Date(date_end)}
+        AND a.appointment_date >= ${toStartOfDay(date_start)}
+        AND a.appointment_date <= ${toEndOfDay(date_end)}
         ${doctor_id ? Prisma.sql`AND a.doctor_id = ${doctor_id}` : Prisma.empty}
         ${status ? Prisma.sql`AND a.status = ${status}` : Prisma.empty}
       ORDER BY a.appointment_date DESC
@@ -219,8 +234,8 @@ export const doctorEventOffReport: ReportDefinition = {
       FROM "DoctorLeave" e
       LEFT JOIN "users" d ON e.doctor_id = d.id
       WHERE e."organizationId" = ${orgId}
-        AND e.from_date >= ${new Date(date_start)}
-        AND e.from_date <= ${new Date(date_end)}
+        AND e.from_date >= ${toStartOfDay(date_start)}
+        AND e.from_date <= ${toEndOfDay(date_end)}
         ${doctor_id ? Prisma.sql`AND e.doctor_id = ${doctor_id}` : Prisma.empty}
       ORDER BY e.from_date DESC
     `;
@@ -234,12 +249,16 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
   category: ReportCategory.Appointment,
   name: 'Appointment - Doctor Event Off Summary',
   description: 'Aggregate the total hours or days blocked by doctors within the period.',
+  // Hidden Bug #2 FIX: Removed filterSpec: { showDepartment: true } and department_id Zod field.
+  // Root cause: users.department is a free-text String column (e.g. "Cardiology"), NOT a FK.
+  // MISFilterEngine sends a department UUID from the departments table. Comparing a UUID
+  // against a department name string would never produce a match — the filter was silently
+  // non-functional. Since there is no clean way to join to a proper department ID from
+  // DoctorLeave without a schema change, we remove the filter rather than ship broken UX.
   filters: z.object({
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
-    department_id: z.string().optional(),
   }),
-  filterSpec: { showDepartment: true },
   columns: [
     { key: 'doctor_name', label: 'Doctor Name', type: 'string' },
     { key: 'department', label: 'Department', type: 'string' },
@@ -250,7 +269,7 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
   rowLimitSync: 5000,
   requiredPermission: 'mis_reports.frontdesk.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end, department_id } = filters;
+    const { date_start, date_end } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         e.doctor_name as "doctor_name",
@@ -260,9 +279,8 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
       FROM "DoctorLeave" e
       LEFT JOIN "users" d ON e.doctor_id = d.id
       WHERE e."organizationId" = ${orgId}
-        AND e.from_date >= ${new Date(date_start)}
-        AND e.from_date <= ${new Date(date_end)}
-        ${department_id ? Prisma.sql`AND d.department = ${department_id}` : Prisma.empty}
+        AND e.from_date >= ${toStartOfDay(date_start)}
+        AND e.from_date <= ${toEndOfDay(date_end)}
       GROUP BY e.doctor_name, d.department
       ORDER BY "total_events" DESC
     `;
@@ -314,8 +332,8 @@ export const appointmentTatReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON a.patient_id = p.patient_id
       LEFT JOIN "clinical_encounters" ce ON ce.appointment_id = a.appointment_id
       WHERE a."organizationId" = ${orgId}
-        AND a.appointment_date >= ${new Date(date_start)}
-        AND a.appointment_date <= ${new Date(date_end)}
+        AND a.appointment_date >= ${toStartOfDay(date_start)}
+        AND a.appointment_date <= ${toEndOfDay(date_end)}
         AND a.checked_in_at IS NOT NULL
       ORDER BY a.appointment_date DESC
     `;
@@ -361,8 +379,8 @@ export const doctorFootfallReport: ReportDefinition = {
         SUM(CASE WHEN a.status = 'NO_SHOW' THEN 1 ELSE 0 END) as "no_shows"
       FROM "appointments" a
       WHERE a."organizationId" = ${orgId}
-        AND a.appointment_date >= ${new Date(date_start)}
-        AND a.appointment_date <= ${new Date(date_end)}
+        AND a.appointment_date >= ${toStartOfDay(date_start)}
+        AND a.appointment_date <= ${toEndOfDay(date_end)}
       GROUP BY a.doctor_name, a.department
       ORDER BY "total_appointments" DESC
     `;
@@ -419,8 +437,8 @@ export const ipPatientReport: ReportDefinition = {
       LEFT JOIN "wards" w ON adm.ward_id = w.ward_id
       LEFT JOIN "beds" b ON adm.bed_id = b.bed_id
       WHERE adm."organizationId" = ${orgId}
-        AND adm.admission_date >= ${new Date(date_start)}
-        AND adm.admission_date <= ${new Date(date_end)}
+        AND adm.admission_date >= ${toStartOfDay(date_start)}
+        AND adm.admission_date <= ${toEndOfDay(date_end)}
         ${ward_id ? Prisma.sql`AND adm.ward_id = ${parseInt(ward_id)}` : Prisma.empty}
       ORDER BY adm.admission_date DESC
     `;
@@ -465,8 +483,8 @@ export const ipConversionReport: ReportDefinition = {
              AND DATE(adm.admission_date) >= DATE(ab.expected_date) - INTERVAL '7 days'
              AND DATE(adm.admission_date) <= DATE(ab.expected_date) + INTERVAL '14 days'
       WHERE ab."organizationId" = ${orgId}
-        AND ab.created_at >= ${new Date(date_start)}
-        AND ab.created_at <= ${new Date(date_end)}
+        AND ab.created_at >= ${toStartOfDay(date_start)}
+        AND ab.created_at <= ${toEndOfDay(date_end)}
       ORDER BY ab.expected_date DESC
     `;
 
@@ -506,8 +524,8 @@ export const ipCancelReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON ab.patient_id = p.patient_id
       WHERE ab."organizationId" = ${orgId}
         AND ab.status = 'Cancelled'
-        AND ab.created_at >= ${new Date(date_start)}
-        AND ab.created_at <= ${new Date(date_end)}
+        AND ab.created_at >= ${toStartOfDay(date_start)}
+        AND ab.created_at <= ${toEndOfDay(date_end)}
       ORDER BY ab.created_at DESC
     `;
 
@@ -556,8 +574,8 @@ export const ipDischargeReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON adm.patient_id = p.patient_id
       WHERE adm."organizationId" = ${orgId}
         AND adm.discharge_date IS NOT NULL
-        AND adm.discharge_date >= ${new Date(date_start)}
-        AND adm.discharge_date <= ${new Date(date_end)}
+        AND adm.discharge_date >= ${toStartOfDay(date_start)}
+        AND adm.discharge_date <= ${toEndOfDay(date_end)}
         ${discharge_type ? Prisma.sql`AND adm.discharge_type = ${discharge_type}` : Prisma.empty}
       ORDER BY adm.discharge_date DESC
     `;
@@ -605,8 +623,8 @@ export const erToIpConversionReport: ReportDefinition = {
       LEFT JOIN "users" doc ON adm.attending_doctor_id = doc.id
       WHERE adm."organizationId" = ${orgId}
         AND adm.admission_source = 'Emergency'
-        AND adm.admission_date >= ${new Date(date_start)}
-        AND adm.admission_date <= ${new Date(date_end)}
+        AND adm.admission_date >= ${toStartOfDay(date_start)}
+        AND adm.admission_date <= ${toEndOfDay(date_end)}
       ORDER BY adm.admission_date DESC
     `;
 
@@ -708,8 +726,8 @@ export const admissionsListReport: ReportDefinition = {
       LEFT JOIN "wards" w ON adm.ward_id = w.ward_id
       LEFT JOIN "beds" b ON adm.bed_id = b.bed_id
       WHERE adm."organizationId" = ${orgId}
-        AND adm.admission_date >= ${new Date(date_start)}
-        AND adm.admission_date <= ${new Date(date_end)}
+        AND adm.admission_date >= ${toStartOfDay(date_start)}
+        AND adm.admission_date <= ${toEndOfDay(date_end)}
         ${ward_id ? Prisma.sql`AND adm.ward_id = ${parseInt(ward_id)}` : Prisma.empty}
       ORDER BY adm.admission_date DESC
     `;
@@ -727,9 +745,15 @@ export const emergencyAdmissionsReport: ReportDefinition = {
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
   }),
-  // D4 Directive: showDepartment added — ER managers typically want to see admissions
-  // routed to specific departments for capacity planning.
-  filterSpec: { showDepartment: true },
+  // Hidden Bug #1 FIX: Removed filterSpec: { showDepartment: true }.
+  // Root cause: admissions table has NO department column (verified in Prisma schema).
+  // The department dropdown was rendered by MISFilterEngine but there was no Zod field
+  // for department_id and no WHERE clause predicate — it was completely non-functional.
+  // The admission_source = 'Emergency' predicate is the correct filter for this report.
+  filters: z.object({
+    date_start: z.string().or(z.date()),
+    date_end: z.string().or(z.date()),
+  }),
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'ip_number', label: 'IP Number', type: 'string' },
@@ -760,8 +784,8 @@ export const emergencyAdmissionsReport: ReportDefinition = {
       LEFT JOIN "wards" w ON adm.ward_id = w.ward_id
       WHERE adm."organizationId" = ${orgId}
         AND (adm.admission_source = 'Emergency' OR adm.admission_category = 'Emergency')
-        AND adm.admission_date >= ${new Date(date_start)}
-        AND adm.admission_date <= ${new Date(date_end)}
+        AND adm.admission_date >= ${toStartOfDay(date_start)}
+        AND adm.admission_date <= ${toEndOfDay(date_end)}
       ORDER BY adm.admission_date DESC
     `;
 
@@ -855,8 +879,8 @@ export const emergencyDischargeReport: ReportDefinition = {
       WHERE adm."organizationId" = ${orgId}
         AND (adm.admission_source = 'Emergency' OR adm.admission_category = 'Emergency')
         AND adm.discharge_date IS NOT NULL
-        AND adm.discharge_date >= ${new Date(date_start)}
-        AND adm.discharge_date <= ${new Date(date_end)}
+        AND adm.discharge_date >= ${toStartOfDay(date_start)}
+        AND adm.discharge_date <= ${toEndOfDay(date_end)}
       ORDER BY adm.discharge_date DESC
     `;
 
@@ -912,8 +936,8 @@ export const bedTransferReport: ReportDefinition = {
       LEFT JOIN "beds" fb ON bt.from_bed_id = fb.bed_id
       LEFT JOIN "beds" tb ON bt.to_bed_id = tb.bed_id
       WHERE bt."organizationId" = ${orgId}
-        AND bt.created_at >= ${new Date(date_start)}
-        AND bt.created_at <= ${new Date(date_end)}
+        AND bt.created_at >= ${toStartOfDay(date_start)}
+        AND bt.created_at <= ${toEndOfDay(date_end)}
       ORDER BY bt.created_at DESC
     `;
 
@@ -963,8 +987,8 @@ export const doctorTransferReport: ReportDefinition = {
       LEFT JOIN "users" doc ON adm.attending_doctor_id = doc.id
       LEFT JOIN "wards" w ON adm.ward_id = w.ward_id
       WHERE adm."organizationId" = ${orgId}
-        AND adm.admission_date >= ${new Date(date_start)}
-        AND adm.admission_date <= ${new Date(date_end)}
+        AND adm.admission_date >= ${toStartOfDay(date_start)}
+        AND adm.admission_date <= ${toEndOfDay(date_end)}
         AND adm.doctor_name IS NOT NULL 
         AND doc.name IS NOT NULL
         AND adm.doctor_name != doc.name
@@ -1013,8 +1037,8 @@ export const expiredPatientsReport: ReportDefinition = {
       LEFT JOIN "users" doc ON adm.attending_doctor_id = doc.id
       WHERE adm."organizationId" = ${orgId}
         AND (adm.is_death = true OR adm.discharge_type = 'Expired' OR adm.status = 'Expired')
-        AND adm.discharge_date >= ${new Date(date_start)}
-        AND adm.discharge_date <= ${new Date(date_end)}
+        AND adm.discharge_date >= ${toStartOfDay(date_start)}
+        AND adm.discharge_date <= ${toEndOfDay(date_end)}
       ORDER BY adm.discharge_date DESC
     `;
 
@@ -1074,8 +1098,8 @@ export const counsellingSummaryReport: ReportDefinition = {
       FROM "CounsellingSession" c
       LEFT JOIN "OPD_REG" p ON c.patient_id = p.patient_id
       WHERE c."organizationId" = ${orgId}
-        AND c.created_at >= ${new Date(date_start)}
-        AND c.created_at <= ${new Date(date_end)}
+        AND c.created_at >= ${toStartOfDay(date_start)}
+        AND c.created_at <= ${toEndOfDay(date_end)}
       ORDER BY c.created_at DESC
     `;
 
@@ -1127,8 +1151,8 @@ export const dischargeTatReport: ReportDefinition = {
       LEFT JOIN "admissions" adm ON dc.admission_id = adm.admission_id
       LEFT JOIN "OPD_REG" p ON adm.patient_id = p.patient_id
       WHERE dc."organizationId" = ${orgId}
-        AND dc.created_at >= ${new Date(date_start)}
-        AND dc.created_at <= ${new Date(date_end)}
+        AND dc.created_at >= ${toStartOfDay(date_start)}
+        AND dc.created_at <= ${toEndOfDay(date_end)}
       ORDER BY dc.created_at DESC
     `;
 

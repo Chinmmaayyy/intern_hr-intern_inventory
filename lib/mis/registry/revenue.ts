@@ -3,6 +3,12 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 export const revenueDepartmentWiseReport: ReportDefinition = {
   id: 'revenue-department-wise',
   category: ReportCategory.Revenue,
@@ -31,8 +37,8 @@ export const revenueDepartmentWiseReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY COALESCE(ii.department, 'Other')
       ORDER BY SUM(ii.total_price) DESC
     `;
@@ -81,8 +87,8 @@ export const revenuePayerTypeWiseReport: ReportDefinition = {
       FROM invoices i
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY UPPER(i.billing_patient_type)
       ORDER BY SUM(i.total_amount) DESC
     `;
@@ -136,8 +142,8 @@ export const revenuePayerNameWiseReport: ReportDefinition = {
       LEFT JOIN insurance_providers ip ON i.tpa_provider_id = ip.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${payer_type ? Prisma.sql`AND i.billing_patient_type = ${payer_type}` : Prisma.empty}
       GROUP BY COALESCE(cm.company_name, ip.provider_name, 'Self-Pay / Cash')
       ORDER BY SUM(i.total_amount) DESC
@@ -164,40 +170,45 @@ export const revenueServiceTypeWiseReport: ReportDefinition = {
   id: 'revenue-service-type-wise',
   category: ReportCategory.Revenue,
   name: 'Revenue - Service Type Wise',
-  description: 'Detailed revenue breakdown by specific service names/types within departments.',
+  description: 'Detailed revenue breakdown by specific service names/types within billing categories.',
   filters: z.object({
     date_start: z.string().or(z.date()),
     date_end: z.string().or(z.date()),
-    department_id: z.string().optional(),
+    // Bug 3A fix: was `department_id` mapped to clinical departments master—
+    // this report groups by invoice_items.service_category (billing category)
+    // NOT by the clinical Department entity. Use service_category instead.
+    service_category: z.string().optional(),
   }),
   columns: [
     { key: 'service_name', label: 'Service Name', type: 'string' },
-    { key: 'department', label: 'Department', type: 'string' },
+    { key: 'service_category', label: 'Service Category', type: 'string' },
     { key: 'frequency', label: 'Frequency', type: 'number', total: 'sum' },
     { key: 'gross_revenue', label: 'Gross Revenue', type: 'currency', total: 'sum' },
   ],
   defaultSort: { column: 'gross_revenue', direction: 'desc' },
   rowLimitSync: 5000,
-    filterSpec: {
-    "showDepartment": true
+  // Bug 3A fix: use showServiceCategory (billing categories: Package/Inventory/Pharmacy)
+  // NOT showDepartment (clinical departments fetched from /api/departments)
+  filterSpec: {
+    showServiceCategory: true,
   },
   requiredPermission: 'mis_reports.revenue.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
-    const { date_start, date_end, department_id } = filters;
+    const { date_start, date_end, service_category } = filters;
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         COALESCE(ii.description, ii.service_category, 'Unknown') as "service_name",
-        COALESCE(ii.department, 'Other') as "department",
+        COALESCE(ii.service_category, 'Other') as "service_category",
         COUNT(ii.id) as "frequency",
         SUM(ii.total_price) as "gross_revenue"
       FROM invoice_items ii
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
-        ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
-      GROUP BY COALESCE(ii.description, ii.service_category, 'Unknown'), COALESCE(ii.department, 'Other')
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
+        ${service_category ? Prisma.sql`AND ii.service_category = ${service_category}` : Prisma.empty}
+      GROUP BY COALESCE(ii.description, ii.service_category, 'Unknown'), COALESCE(ii.service_category, 'Other')
       ORDER BY SUM(ii.total_price) DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -215,6 +226,7 @@ export const revenueServiceTypeWiseReport: ReportDefinition = {
     };
   },
 };
+
 
 export const revenueBillingCategoryWiseReport: ReportDefinition = {
   id: 'revenue-billing-category-wise',
@@ -246,8 +258,8 @@ export const revenueBillingCategoryWiseReport: ReportDefinition = {
       FROM invoices i
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY UPPER(i.invoice_type)
       ORDER BY SUM(i.total_amount) DESC
     `;
@@ -301,8 +313,8 @@ export const revenueWardWiseReport: ReportDefinition = {
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
         AND i.invoice_type = 'IPD'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY COALESCE(w.ward_name, 'Unknown Ward')
       ORDER BY SUM(ii.total_price) DESC
     `;

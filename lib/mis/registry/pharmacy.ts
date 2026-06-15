@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 const defaultFilters = z.object({
   date_start: z.string().or(z.date()),
   date_end: z.string().or(z.date()),
@@ -43,8 +49,8 @@ export const pharmacyIpIssueReport: ReportDefinition = {
       LEFT JOIN "users" doc ON po.doctor_id = doc.id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { rows, totals: {} };
@@ -89,8 +95,8 @@ export const pharmacyIpItemDetailReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { rows, totals: {} };
@@ -133,8 +139,8 @@ export const pharmacyOpItemDetailReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { rows, totals: {} };
@@ -175,8 +181,8 @@ export const pharmacyOpSummaryDetailReport: ReportDefinition = {
       LEFT JOIN "users" doc ON po.doctor_id = doc.id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { rows, totals: {} };
@@ -200,11 +206,11 @@ export const pharmacyIpDailyReport: ReportDefinition = {
   requiredPermission: 'mis_reports.pharmacy.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
-    const start = new Date(date_start);
-    const end   = new Date(date_end);
+    const start = toStartOfDay(date_start);
+    const end   = toEndOfDay(date_end);
     const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
 
-    // ── Phase E3 Optimisation ────────────────────────────────────────────────
+    // ── Phase E3 Optimisation ───────────────────────────────────────────────
     // > 7 days  → rollup table (mis_daily_pharmacy_rollups, order_type='IP')
     // ≤ 7 days  → live pharmacy_orders table
     //
@@ -291,8 +297,8 @@ export const pharmacyDailyIpReturnReport: ReportDefinition = {
       WHERE pr."organizationId" = ${orgId}
         AND pr.return_type = 'patient_return'
         AND (inv.admission_id IS NOT NULL OR inv.invoice_type = 'IPD')
-        AND pr.created_at >= ${new Date(date_start)}
-        AND pr.created_at <= ${new Date(date_end)}
+        AND pr.created_at >= ${toStartOfDay(date_start)}
+        AND pr.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(pr.created_at)
       ORDER BY DATE(pr.created_at) DESC
     `;
@@ -340,8 +346,8 @@ export const pharmacyDailyIpIssueReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(po.created_at), po.admission_id, p.full_name
       ORDER BY DATE(po.created_at) DESC
     `;
@@ -384,8 +390,8 @@ export const pharmacyOpTaxSummaryReport: ReportDefinition = {
       JOIN "pharmacy_orders" po ON poi.order_id = po.id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(po.created_at), poi.tax_rate
       ORDER BY DATE(po.created_at) DESC
     `;
@@ -434,8 +440,8 @@ export const pharmacyOpTaxDetailsReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { rows, totals: {} };
@@ -474,8 +480,8 @@ export const pharmacyIpIssueWithTagsReport: ReportDefinition = {
       LEFT JOIN "PatientEngagement" pe ON po.patient_id = pe.patient_id AND po."organizationId" = pe."organizationId"
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { 
@@ -518,8 +524,8 @@ export const pharmacyOpSaleWithTagsReport: ReportDefinition = {
       LEFT JOIN "PatientEngagement" pe ON po.patient_id = pe.patient_id AND po."organizationId" = pe."organizationId"
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { 
@@ -735,8 +741,8 @@ export const pharmacyDoctorWiseSaleReport: ReportDefinition = {
       FROM "pharmacy_orders" po
       LEFT JOIN "users" doc ON po.doctor_id = doc.id
       WHERE po."organizationId" = ${orgId}
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(po.created_at), doc.name
       ORDER BY DATE(po.created_at) DESC, doc.name ASC
     `;
@@ -782,8 +788,8 @@ export const pharmacyPatientPullOffReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" p ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND poi.quantity_dispensed > 0
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { 
@@ -827,8 +833,8 @@ export const pharmacyDoctorPullOffReport: ReportDefinition = {
       LEFT JOIN "users" doc ON po.doctor_id = doc.id
       WHERE po."organizationId" = ${orgId}
         AND poi.quantity_dispensed > 0
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { 
@@ -875,8 +881,8 @@ export const pharmacyIpPullOffReport: ReportDefinition = {
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = true
         AND poi.quantity_dispensed > 0
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC
     `;
     return { 
@@ -915,8 +921,8 @@ export const pharmacyOpSummaryReport: ReportDefinition = {
   requiredPermission: 'mis_reports.pharmacy.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end } = filters;
-    const start = new Date(date_start);
-    const end   = new Date(date_end);
+    const start = toStartOfDay(date_start);
+    const end   = toEndOfDay(date_end);
     const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
 
     // ── Phase E3 Optimisation ────────────────────────────────────────────────
@@ -1043,8 +1049,8 @@ export const pharmacyOpSaleDetailReport: ReportDefinition = {
       LEFT JOIN "users"       doc ON po.doctor_id  = doc.id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY po.created_at DESC, poi.id ASC
     `;
 
@@ -1117,8 +1123,8 @@ export const pharmacyOpReturnDetailReport: ReportDefinition = {
       WHERE pr."organizationId" = ${orgId}
         AND pr.return_type = 'patient_return'
         AND (inv.admission_id IS NULL OR inv.id IS NULL)   -- OP: no admission linked
-        AND pr.created_at >= ${new Date(date_start)}
-        AND pr.created_at <= ${new Date(date_end)}
+        AND pr.created_at >= ${toStartOfDay(date_start)}
+        AND pr.created_at <= ${toEndOfDay(date_end)}
       ORDER BY pr.created_at DESC
     `;
 
@@ -1180,8 +1186,8 @@ export const pharmacyHsnSummaryReport: ReportDefinition = {
       JOIN "pharmacy_orders" po ON poi.order_id = po.id
       WHERE po."organizationId" = ${orgId}
         AND po.is_ipd_linked = false
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(po.created_at), poi.hsn_sac_code, poi.medicine_name, poi.tax_rate
       ORDER BY DATE(po.created_at) DESC, poi.hsn_sac_code ASC
     `;
@@ -1254,8 +1260,8 @@ export const pharmacySettlementReport: ReportDefinition = {
       JOIN  "payments"  pay ON pay.invoice_id = inv.id
       LEFT JOIN "OPD_REG" p ON po.patient_id  = p.patient_id
       WHERE po."organizationId" = ${orgId}
-        AND pay.created_at >= ${new Date(date_start)}
-        AND pay.created_at <= ${new Date(date_end)}
+        AND pay.created_at >= ${toStartOfDay(date_start)}
+        AND pay.created_at <= ${toEndOfDay(date_end)}
       ORDER BY pay.created_at DESC
     `;
 
@@ -1320,8 +1326,8 @@ export const pharmacyDoctorWiseDetailReport: ReportDefinition = {
       LEFT JOIN "OPD_REG"     p   ON po.patient_id = p.patient_id
       WHERE po."organizationId" = ${orgId}
         AND COALESCE(poi.quantity_dispensed, 0) > 0
-        AND po.created_at >= ${new Date(date_start)}
-        AND po.created_at <= ${new Date(date_end)}
+        AND po.created_at >= ${toStartOfDay(date_start)}
+        AND po.created_at <= ${toEndOfDay(date_end)}
       ORDER BY doc.name ASC NULLS LAST, po.created_at DESC, poi.id ASC
     `;
 

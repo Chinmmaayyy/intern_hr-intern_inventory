@@ -8,6 +8,12 @@ import { REGISTRY } from '@/lib/mis/runner';
 import { UniversalReportShell } from '@/components/mis/UniversalReportShell';
 import type { UniversalPayload } from '@/components/mis/UniversalReportShell';
 
+// Bug 1 fix (belt-and-suspenders): force the route to be dynamic so Next.js
+// ALWAYS re-executes the Server Component with the current searchParams on
+// every navigation. Without this, the RSC cache may serve a stale payload
+// when filter params change.
+export const dynamic = 'force-dynamic';
+
 /**
  * Dynamic MIS Report Viewer — `app/admin/mis/[reportId]/page.tsx`
  * ---------------------------------------------------------------
@@ -102,6 +108,9 @@ function buildFilters(sp: { [key: string]: string | string[] | undefined }): Rec
         bill_type: raw('bill_type'),
         status: raw('status'),
         store_id: raw('store_id'),
+        // Bug 3A fix: forward service_category so Revenue Service Type report
+        // receives the correct billing category filter on the SSR pass.
+        service_category: raw('service_category'),
     };
 }
 
