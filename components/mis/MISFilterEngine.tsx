@@ -2,7 +2,7 @@
 
 import React, { useCallback, useTransition, useEffect, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { CalendarRange, UserSearch, X, SlidersHorizontal, Building2, CreditCard, Activity, Store } from 'lucide-react';
+import { CalendarRange, UserSearch, X, SlidersHorizontal, Building2, CreditCard, Activity, Store, GitBranch, LayoutGrid } from 'lucide-react';
 import type { FilterSpec } from '@/lib/mis/types';
 import { MISPresetManager } from './MISPresetManager';
 
@@ -21,6 +21,8 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
 
     const [departments, setDepartments] = useState<{id: string, name: string}[]>([]);
     const [stores, setStores] = useState<{id: string, name: string}[]>([]);
+    // Bug 3B fix: branches state for the new Branch dropdown
+    const [branches, setBranches] = useState<{id: string, name: string}[]>([]);
 
     useEffect(() => {
         if (filterSpec?.showDepartment) {
@@ -47,6 +49,19 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                 })
                 .catch(() => setStores([]));
         }
+        // Bug 3B fix: fetch branches from admin branches API
+        if (filterSpec?.showBranch) {
+            fetch('/api/admin/branches')
+                .then(res => {
+                    if (!res.ok) return [];
+                    return res.json();
+                })
+                .then(data => {
+                    const arr = Array.isArray(data) ? data : data?.data || data?.branches || [];
+                    setBranches(arr);
+                })
+                .catch(() => setBranches([]));
+        }
     }, [filterSpec]);
 
     const startDate   = searchParams.get('startDate') ?? '';
@@ -56,8 +71,12 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
     const billType    = searchParams.get('bill_type') ?? '';
     const statusVal   = searchParams.get('status') ?? '';
     const storeId     = searchParams.get('store_id') ?? '';
+    // Bug 3B fix: read branch_id from URL
+    const branchId    = searchParams.get('branch_id') ?? '';
+    // Bug 3A fix: read service_category from URL
+    const serviceCategory = searchParams.get('service_category') ?? '';
 
-    const hasActiveFilters = Boolean(startDate || endDate || doctor || department || billType || statusVal || storeId);
+    const hasActiveFilters = Boolean(startDate || endDate || doctor || department || billType || statusVal || storeId || branchId || serviceCategory);
 
     const pushParam = useCallback(
         (key: string, value: string) => {
@@ -81,6 +100,10 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
     const handleBillType  = (e: React.ChangeEvent<HTMLSelectElement>) => pushParam('bill_type', e.target.value);
     const handleStatus    = (e: React.ChangeEvent<HTMLSelectElement>) => pushParam('status', e.target.value);
     const handleStore     = (e: React.ChangeEvent<HTMLSelectElement>) => pushParam('store_id', e.target.value);
+    // Bug 3B fix: branch handler
+    const handleBranch    = (e: React.ChangeEvent<HTMLSelectElement>) => pushParam('branch_id', e.target.value);
+    // Bug 3A fix: service category handler
+    const handleServiceCategory = (e: React.ChangeEvent<HTMLSelectElement>) => pushParam('service_category', e.target.value);
 
     const handleClear = () => {
         startTransition(() => {
@@ -244,6 +267,58 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                     </div>
                 )}
 
+                {/* Bug 3B fix: Branch dropdown — appears when filterSpec.showBranch is true */}
+                {filterSpec?.showBranch && (
+                    <div className="flex items-center gap-2 w-full sm:w-56 shrink-0">
+                        <GitBranch className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        <div className="flex-1">
+                            <label htmlFor="mis-branch-select" className="sr-only">Filter by branch</label>
+                            <select
+                                suppressHydrationWarning
+                                id="mis-branch-select"
+                                value={branchId}
+                                onChange={handleBranch}
+                                className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-150 cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 20 20%22><path stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22M6 8l4 4 4-4%22/></svg>')] bg-no-repeat bg-[right_10px_center] bg-[length:16px] pr-8"
+                            >
+                                <option value="">All Branches</option>
+                                {branches.map((b) => (
+                                    <option key={b.id} value={b.id}>{b.name || b.id}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
+
+                {/* Bug 3A fix: Service Category dropdown — static list of billing categories.
+                     Replaces the clinical showDepartment dropdown for Revenue Service Type reports.
+                     These are the actual categories in invoice_items.service_category, NOT
+                     clinical departments like Cardiology from the departments master table. */}
+                {filterSpec?.showServiceCategory && (
+                    <div className="flex items-center gap-2 w-full sm:w-56 shrink-0">
+                        <LayoutGrid className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                        <div className="flex-1">
+                            <label htmlFor="mis-svc-cat-select" className="sr-only">Filter by service category</label>
+                            <select
+                                suppressHydrationWarning
+                                id="mis-svc-cat-select"
+                                value={serviceCategory}
+                                onChange={handleServiceCategory}
+                                className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-150 cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 20 20%22><path stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22M6 8l4 4 4-4%22/></svg>')] bg-no-repeat bg-[right_10px_center] bg-[length:16px] pr-8"
+                            >
+                                <option value="">All Categories</option>
+                                <option value="Package">Package</option>
+                                <option value="Inventory">Inventory</option>
+                                <option value="Pharmacy">Pharmacy</option>
+                                <option value="Consultation">Consultation</option>
+                                <option value="Procedure">Procedure</option>
+                                <option value="Lab">Lab</option>
+                                <option value="Radiology">Radiology</option>
+                                <option value="Bed Charges">Bed Charges</option>
+                            </select>
+                        </div>
+                    </div>
+                )}
+
                 {hasActiveFilters && (
                     <button
                         suppressHydrationWarning
@@ -261,7 +336,10 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                         <MISPresetManager 
                             reportId={reportId} 
                             currentFilters={{
-                                startDate, endDate, doctor, department_id: department, bill_type: billType, status: statusVal, store_id: storeId
+                                startDate, endDate, doctor, department_id: department, bill_type: billType,
+                                status: statusVal, store_id: storeId,
+                                // Bug 3B/3A fix: include new filter keys in preset snapshots
+                                branch_id: branchId, service_category: serviceCategory,
                             }} 
                         />
                     </div>
@@ -277,6 +355,9 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                     {filterSpec?.showBillType && billType && <FilterPill label="Bill Type" value={billType} onRemove={() => pushParam('bill_type', '')} />}
                     {filterSpec?.showStatus && statusVal && <FilterPill label="Status" value={statusVal} onRemove={() => pushParam('status', '')} />}
                     {filterSpec?.showStore && storeId && <FilterPill label="Store" value={stores.find(s => s.id === storeId)?.name || storeId} onRemove={() => pushParam('store_id', '')} />}
+                    {/* Bug 3B/3A fix: pills for new filter keys */}
+                    {filterSpec?.showBranch && branchId && <FilterPill label="Branch" value={branches.find(b => b.id === branchId)?.name || branchId} onRemove={() => pushParam('branch_id', '')} />}
+                    {filterSpec?.showServiceCategory && serviceCategory && <FilterPill label="Category" value={serviceCategory} onRemove={() => pushParam('service_category', '')} />}
                 </div>
             )}
         </div>

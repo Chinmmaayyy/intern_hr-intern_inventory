@@ -5,6 +5,12 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 export const dailyRevenueReport: ReportDefinition = {
   id: 'billing-revenue-daily',
   category: ReportCategory.Revenue,
@@ -34,8 +40,8 @@ export const dailyRevenueReport: ReportDefinition = {
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id, department_id } = filters;
 
-    const start = new Date(date_start);
-    const end = new Date(date_end);
+    const start = toStartOfDay(date_start);
+    const end = toEndOfDay(date_end);
     const rangeDays = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
 
     // ── Phase E3 Optimisation ─────────────────────────────────────────────────
@@ -175,8 +181,8 @@ export const billingDetailReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
         ${bill_type ? Prisma.sql`AND i.billing_patient_type = ${bill_type}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC, i.invoice_number ASC
@@ -211,8 +217,8 @@ export const billingDetailReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${department_id ? Prisma.sql`AND ii.department = ${department_id}` : Prisma.empty}
         ${bill_type ? Prisma.sql`AND i.billing_patient_type = ${bill_type}` : Prisma.empty}
     `;
@@ -253,8 +259,8 @@ export const billingItemDetailReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${item_name ? Prisma.sql`AND ii.description ILIKE ${'%' + item_name + '%'}` : Prisma.empty}
       GROUP BY ii.description, ii.department
       ORDER BY SUM(ii.total_price) DESC
@@ -301,9 +307,28 @@ export const billingSummaryReport: ReportDefinition = {
   // Drill-down: clicking a date row opens billing-detail filtered to that date.
   drillDownTo: 'billing-detail',
   drillDownKey: 'date',
+  // Bug 3B fix: expose branch filter in UI — schema already had branch_id but
+  // filterSpec was absent, so MISFilterEngine never rendered the Branch dropdown.
+  filterSpec: { showBranch: true },
   requiredPermission: 'mis_reports.billing.view',
   queryFn: async (filters: ValidatedFilters, orgId: string) => {
     const { date_start, date_end, branch_id } = filters;
+
+    // Bug 2 fix: append end-of-day time so IST invoices created on date_end
+    // are included. new Date('2026-06-15') = 2026-06-15T00:00:00Z (midnight UTC)
+    // = 05:30 IST — invoices from 05:31 IST onward on that day were excluded.
+    // Appending 'T23:59:59.999Z' covers the full UTC calendar day.
+    const startBoundary = new Date(
+      typeof date_start === 'string' && !date_start.includes('T')
+        ? date_start + 'T00:00:00.000Z'
+        : date_start
+    );
+    const endBoundary = new Date(
+      typeof date_end === 'string' && !date_end.includes('T')
+        ? date_end + 'T23:59:59.999Z'
+        : date_end
+    );
+
     const rows = await prisma.$queryRaw<any[]>`
       SELECT 
         DATE(i.created_at) as "date",
@@ -314,8 +339,8 @@ export const billingSummaryReport: ReportDefinition = {
       FROM invoices i
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${startBoundary}
+        AND i.created_at <= ${endBoundary}
         ${branch_id ? Prisma.sql`AND i.branch_id = ${branch_id}` : Prisma.empty}
       GROUP BY DATE(i.created_at)
       ORDER BY DATE(i.created_at) DESC
@@ -343,6 +368,7 @@ export const billingSummaryReport: ReportDefinition = {
     return { rows: serializedRows, totals };
   },
 };
+
 
 export const billingSummaryDetailReport: ReportDefinition = {
   id: 'billing-summary-detail',
@@ -380,8 +406,8 @@ export const billingSummaryDetailReport: ReportDefinition = {
       FROM invoices i
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${patient_uhid ? Prisma.sql`AND i.patient_id = ${patient_uhid}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC, i.invoice_number ASC
     `;
@@ -437,8 +463,8 @@ export const billingPaymentModeReport: ReportDefinition = {
       JOIN invoices i ON p.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         AND p.status = 'Completed'
       GROUP BY p.payment_method
       ORDER BY SUM(p.amount) DESC
@@ -501,8 +527,8 @@ export const billingUhidAdvanceReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" opd ON pd.patient_id = opd.patient_id
       WHERE pd."organizationId" = ${orgId}
         AND pd.admission_id IS NULL
-        AND pd.created_at >= ${new Date(date_start)}
-        AND pd.created_at <= ${new Date(date_end)}
+        AND pd.created_at >= ${toStartOfDay(date_start)}
+        AND pd.created_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(pd.created_at) DESC
     `;
 
@@ -565,8 +591,8 @@ export const billingAdmissionAdvanceReport: ReportDefinition = {
       LEFT JOIN wards w ON adm.ward_id = w.ward_id
       WHERE pd."organizationId" = ${orgId}
         AND pd.admission_id IS NOT NULL
-        AND pd.created_at >= ${new Date(date_start)}
-        AND pd.created_at <= ${new Date(date_end)}
+        AND pd.created_at >= ${toStartOfDay(date_start)}
+        AND pd.created_at <= ${toEndOfDay(date_end)}
         ${department_id ? Prisma.sql`AND w.department_id = ${department_id}` : Prisma.empty}
       ORDER BY DATE(pd.created_at) DESC
     `;
@@ -626,8 +652,8 @@ export const billingDiscountSummaryReport: ReportDefinition = {
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
         AND i.total_discount > 0
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${branch_id ? Prisma.sql`AND i.branch_id = ${branch_id}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC
     `;
@@ -686,8 +712,8 @@ export const billingDueSettledReport: ReportDefinition = {
       WHERE i."organizationId" = ${orgId}
         AND p.status = 'Completed'
         AND p.payment_type = 'Settlement'
-        AND p.created_at >= ${new Date(date_start)}
-        AND p.created_at <= ${new Date(date_end)}
+        AND p.created_at >= ${toStartOfDay(date_start)}
+        AND p.created_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(p.created_at) DESC
     `;
 
@@ -750,8 +776,8 @@ export const billingRefundReport: ReportDefinition = {
       LEFT JOIN payments p ON p.id::text = r.payment_id
       WHERE r."organizationId" = ${orgId}
         AND r.status = 'Processed'
-        AND r.created_at >= ${new Date(date_start)}
-        AND r.created_at <= ${new Date(date_end)}
+        AND r.created_at >= ${toStartOfDay(date_start)}
+        AND r.created_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(r.created_at) DESC
     `;
 
@@ -813,8 +839,8 @@ export const billingOpRefundReport: ReportDefinition = {
       WHERE r."organizationId" = ${orgId}
         AND r.status = 'Processed'
         AND (i.invoice_type = 'OPD' OR i.admission_id IS NULL)
-        AND r.created_at >= ${new Date(date_start)}
-        AND r.created_at <= ${new Date(date_end)}
+        AND r.created_at >= ${toStartOfDay(date_start)}
+        AND r.created_at <= ${toEndOfDay(date_end)}
         ${department_id ? Prisma.sql`AND (u.department = ${department_id} OR u.specialty = ${department_id})` : Prisma.empty}
       ORDER BY DATE(r.created_at) DESC
     `;
@@ -862,8 +888,8 @@ export const billingDateWiseCashReport: ReportDefinition = {
         WHERE i."organizationId" = ${orgId}
           AND ps.status = 'received'
           AND ps.payment_method ILIKE '%cash%'
-          AND ps.payment_date >= ${new Date(date_start)}
-          AND ps.payment_date <= ${new Date(date_end)}
+          AND ps.payment_date >= ${toStartOfDay(date_start)}
+          AND ps.payment_date <= ${toEndOfDay(date_end)}
         GROUP BY DATE(ps.payment_date), ps.received_by
       ),
       cash_refunds AS (
@@ -876,8 +902,8 @@ export const billingDateWiseCashReport: ReportDefinition = {
         WHERE r."organizationId" = ${orgId}
           AND r.status = 'Processed'
           AND p.payment_method ILIKE '%cash%'
-          AND r.created_at >= ${new Date(date_start)}
-          AND r.created_at <= ${new Date(date_end)}
+          AND r.created_at >= ${toStartOfDay(date_start)}
+          AND r.created_at <= ${toEndOfDay(date_end)}
         GROUP BY DATE(r.created_at), r.processed_by
       )
       SELECT 
@@ -966,8 +992,8 @@ export const billingDoctorPayoutReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${doctor_id ? Prisma.sql`AND u.id = ${doctor_id}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC
     `;
@@ -1027,7 +1053,7 @@ export const billingDoctorAccountPayableReport: ReportDefinition = {
       JOIN "users" u ON i.doctor_id = u.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         AND (u.role = 'doctor' OR u.role = 'surgeon')
       GROUP BY u.id, u.name, u.department, u.specialty, u.consultation_fee
       ORDER BY SUM(LEAST(COALESCE(u.consultation_fee, 0), COALESCE(ii.total_price, 0))) DESC
@@ -1101,8 +1127,8 @@ export const billingIpPackageReport: ReportDefinition = {
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
         AND i.invoice_type = 'IPD'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(adm.admission_date) DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -1156,8 +1182,8 @@ export const billingHealthCheckupCountReport: ReportDefinition = {
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
         AND (ii.department ILIKE '%checkup%' OR ii.service_category ILIKE '%checkup%' OR ii.description ILIKE '%checkup%')
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
         ${package_id ? Prisma.sql`AND ii.ref_id = ${package_id}` : Prisma.empty}
       GROUP BY ii.ref_id, ii.description
       ORDER BY COUNT(ii.id) DESC
@@ -1260,8 +1286,8 @@ export const billingDepositRefundReport: ReportDefinition = {
         AND r.status = 'Processed'
         AND i.invoice_type = 'IPD'
         AND r.reason ILIKE '%deposit%'
-        AND r.created_at >= ${new Date(date_start)}
-        AND r.created_at <= ${new Date(date_end)}
+        AND r.created_at >= ${toStartOfDay(date_start)}
+        AND r.created_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(r.created_at) DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -1372,8 +1398,8 @@ export const billingPaymentServiceTypeReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY COALESCE(ii.service_category, ii.department, 'Unknown')
       ORDER BY SUM(ii.total_price) DESC
     `;
@@ -1427,8 +1453,8 @@ export const billingPaymentSummaryReport: ReportDefinition = {
       JOIN invoices i ON ps.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND ps.status = 'received'
-        AND ps.payment_date >= ${new Date(date_start)}
-        AND ps.payment_date <= ${new Date(date_end)}
+        AND ps.payment_date >= ${toStartOfDay(date_start)}
+        AND ps.payment_date <= ${toEndOfDay(date_end)}
       GROUP BY DATE(ps.payment_date)
       ORDER BY DATE(ps.payment_date) DESC
     `;
@@ -1483,8 +1509,8 @@ export const billingRevenueSummaryReport: ReportDefinition = {
       FROM invoices i
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(i.created_at)
       ORDER BY DATE(i.created_at) DESC
     `;
@@ -1542,8 +1568,8 @@ export const billingCancelBillReport: ReportDefinition = {
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       WHERE i."organizationId" = ${orgId}
         AND i.status ILIKE 'cancelled'
-        AND i.updated_at >= ${new Date(date_start)}
-        AND i.updated_at <= ${new Date(date_end)}
+        AND i.updated_at >= ${toStartOfDay(date_start)}
+        AND i.updated_at <= ${toEndOfDay(date_end)}
       ORDER BY DATE(i.updated_at) DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -1588,8 +1614,8 @@ export const billingServiceTypeSummaryReport: ReportDefinition = {
       JOIN invoices i ON ii.invoice_id = i.id
       WHERE i."organizationId" = ${orgId}
         AND i.status != 'cancelled'
-        AND i.created_at >= ${new Date(date_start)}
-        AND i.created_at <= ${new Date(date_end)}
+        AND i.created_at >= ${toStartOfDay(date_start)}
+        AND i.created_at <= ${toEndOfDay(date_end)}
       GROUP BY COALESCE(ii.service_category, ii.department, 'Other')
       ORDER BY SUM(ii.total_price) DESC
     `;

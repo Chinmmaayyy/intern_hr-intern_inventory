@@ -16,13 +16,16 @@ export enum ReportCategory {
 }
 
 export interface FilterSpec {
-  showDepartment?: boolean;
-  showDoctor?:     boolean;
-  showBillType?:   boolean;  // Cash | TPA | Corporate | All
-  showStatus?:     boolean;
-  showStore?:      boolean;
-  showWard?:       boolean;  // renders Ward dropdown (fetches from /api/wards) — used by IPD/admission reports
-  statusOptions?:  string[]; // e.g. ['Pending', 'Completed', 'Cancelled']
+  showDepartment?:      boolean;
+  showDoctor?:          boolean;
+  showBillType?:        boolean;  // Cash | TPA | Corporate | All
+  showStatus?:          boolean;
+  showStore?:           boolean;
+  showWard?:            boolean;  // renders Ward dropdown (fetches from /api/wards) — used by IPD/admission reports
+  showBranch?:          boolean;  // renders Branch dropdown (fetches from /api/admin/branches) — used by Billing Summary etc.
+  showServiceCategory?: boolean;  // renders static billing-category dropdown (Package/Inventory/Pharmacy/Consultation)
+                                  // DISTINCT from showDepartment which fetches clinical departments
+  statusOptions?:       string[]; // e.g. ['Pending', 'Completed', 'Cancelled']
 }
 
 export interface ColumnSpec {

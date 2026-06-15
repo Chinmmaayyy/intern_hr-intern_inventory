@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 const defaultFilters = z.object({
   date_start: z.string().or(z.date()),
   date_end: z.string().or(z.date()),
@@ -41,8 +47,8 @@ export const otBookingDetailsReport: ReportDefinition = {
       FROM "ot_schedules" s
       JOIN "surgery_requests" r ON s.surgery_request_id = r.id
       WHERE r."organizationId" = ${orgId}
-        AND s.scheduled_date >= ${new Date(date_start)}
-        AND s.scheduled_date <= ${new Date(date_end)}
+        AND s.scheduled_date >= ${toStartOfDay(date_start)}
+        AND s.scheduled_date <= ${toEndOfDay(date_end)}
       ORDER BY s.scheduled_date DESC
     `;
     return { rows, totals: {} };
@@ -81,8 +87,8 @@ export const otSurgeryDetailsReport: ReportDefinition = {
       FROM "surgery_requests" r
       LEFT JOIN "surgery_notes" n ON r.id = n.surgery_request_id
       WHERE r."organizationId" = ${orgId}
-        AND r.created_at >= ${new Date(date_start)}
-        AND r.created_at <= ${new Date(date_end)}
+        AND r.created_at >= ${toStartOfDay(date_start)}
+        AND r.created_at <= ${toEndOfDay(date_end)}
       ORDER BY r.created_at DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -125,8 +131,8 @@ export const otSurgeryTatReport: ReportDefinition = {
       JOIN "surgery_requests" r ON s.surgery_request_id = r.id
       WHERE r."organizationId" = ${orgId}
         AND s.actual_end IS NOT NULL
-        AND s.scheduled_date >= ${new Date(date_start)}
-        AND s.scheduled_date <= ${new Date(date_end)}
+        AND s.scheduled_date >= ${toStartOfDay(date_start)}
+        AND s.scheduled_date <= ${toEndOfDay(date_end)}
       ORDER BY s.scheduled_date DESC
     `;
     const totals = rows.reduce((acc, row) => {
@@ -188,8 +194,8 @@ export const ambulanceOrdersReport: ReportDefinition = {
         COALESCE(ar.billing_amount, 0)                         AS "billing_amount"
       FROM "ambulance_requests" ar
       WHERE ar."organizationId" = ${orgId}
-        AND ar.requested_at >= ${new Date(date_start)}
-        AND ar.requested_at <= ${new Date(date_end)}
+        AND ar.requested_at >= ${toStartOfDay(date_start)}
+        AND ar.requested_at <= ${toEndOfDay(date_end)}
       ORDER BY ar.requested_at DESC
     `;
 
@@ -240,8 +246,8 @@ export const ambulanceRequestReport: ReportDefinition = {
         ar.status                                AS "status"
       FROM "ambulance_requests" ar
       WHERE ar."organizationId" = ${orgId}
-        AND ar.requested_at >= ${new Date(date_start)}
-        AND ar.requested_at <= ${new Date(date_end)}
+        AND ar.requested_at >= ${toStartOfDay(date_start)}
+        AND ar.requested_at <= ${toEndOfDay(date_end)}
       ORDER BY ar.requested_at DESC
     `;
     return { rows, totals: {} };
@@ -286,8 +292,8 @@ export const ambulanceTatReport: ReportDefinition = {
       FROM "ambulance_requests" ar
       WHERE ar."organizationId" = ${orgId}
         AND ar.status = 'Completed'
-        AND ar.requested_at >= ${new Date(date_start)}
-        AND ar.requested_at <= ${new Date(date_end)}
+        AND ar.requested_at >= ${toStartOfDay(date_start)}
+        AND ar.requested_at <= ${toEndOfDay(date_end)}
       ORDER BY ar.requested_at DESC
     `;
 
@@ -363,8 +369,8 @@ export const opticalItemBillingReport: ReportDefinition = {
       JOIN "optical_orders"      oo ON oi.order_id = oo.id
       LEFT JOIN "invoices"        i  ON oo.invoice_id = i.id::text
       WHERE oo."organizationId" = ${orgId}
-        AND oo.order_date >= ${new Date(date_start)}
-        AND oo.order_date <= ${new Date(date_end)}
+        AND oo.order_date >= ${toStartOfDay(date_start)}
+        AND oo.order_date <= ${toEndOfDay(date_end)}
       ORDER BY oo.order_date DESC, oo.order_number, oi.id
     `;
 
@@ -414,8 +420,8 @@ export const opticalProductBillingReport: ReportDefinition = {
       FROM "optical_order_items" oi
       JOIN "optical_orders" oo ON oi.order_id = oo.id
       WHERE oo."organizationId" = ${orgId}
-        AND oo.order_date >= ${new Date(date_start)}
-        AND oo.order_date <= ${new Date(date_end)}
+        AND oo.order_date >= ${toStartOfDay(date_start)}
+        AND oo.order_date <= ${toEndOfDay(date_end)}
       GROUP BY oi.item_type, oi.item_name
       ORDER BY SUM(oi.total_price) DESC
     `;
@@ -472,8 +478,8 @@ export const opticalDailySettlementReport: ReportDefinition = {
       JOIN "payments"  p  ON p.invoice_id  = i.id
       WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
-        AND p.created_at >= ${new Date(date_start)}
-        AND p.created_at <= ${new Date(date_end)}
+        AND p.created_at >= ${toStartOfDay(date_start)}
+        AND p.created_at <= ${toEndOfDay(date_end)}
       ORDER BY p.created_at DESC
     `;
 
@@ -517,8 +523,8 @@ export const opticalDailySettlementSumReport: ReportDefinition = {
       JOIN "payments"  p  ON p.invoice_id  = i.id
       WHERE oo."organizationId" = ${orgId}
         AND p.status = 'Completed'
-        AND p.created_at >= ${new Date(date_start)}
-        AND p.created_at <= ${new Date(date_end)}
+        AND p.created_at >= ${toStartOfDay(date_start)}
+        AND p.created_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(p.created_at), p.payment_method
       ORDER BY DATE(p.created_at) DESC, SUM(p.amount) DESC
     `;
@@ -588,8 +594,8 @@ export const opticalPaymentReport: ReportDefinition = {
         )                                                  AS "last_payment_method"
       FROM "optical_orders" oo
       WHERE oo."organizationId" = ${orgId}
-        AND oo.order_date >= ${new Date(date_start)}
-        AND oo.order_date <= ${new Date(date_end)}
+        AND oo.order_date >= ${toStartOfDay(date_start)}
+        AND oo.order_date <= ${toEndOfDay(date_end)}
       ORDER BY oo.order_date DESC
     `;
 

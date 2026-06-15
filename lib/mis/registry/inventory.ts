@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
 
 const defaultFilters = z.object({
   date_start: z.string().or(z.date()),
@@ -144,8 +149,8 @@ export const inventoryGrnSummaryReport: ReportDefinition = {
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       LEFT JOIN "goods_receipt_note_items" gi ON gi.grn_id = g.id
       WHERE g."organizationId" = ${orgId}
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(g.received_at), v.vendor_name
       ORDER BY DATE(g.received_at) DESC
     `;
@@ -191,8 +196,8 @@ export const inventoryGrnReturnSummaryReport: ReportDefinition = {
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       WHERE g."organizationId" = ${orgId}
         AND gi.quantity_rejected > 0
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       GROUP BY DATE(g.received_at), v.vendor_name
       ORDER BY DATE(g.received_at) DESC
     `;
@@ -296,8 +301,8 @@ export const inventoryGrnDetailReport: ReportDefinition = {
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       LEFT JOIN "stores" s ON g.store_id = s.id
       WHERE g."organizationId" = ${orgId}
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       ORDER BY g.received_at DESC
     `;
     return { 
@@ -348,8 +353,8 @@ export const inventoryGrnReturnDetailReport: ReportDefinition = {
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       WHERE g."organizationId" = ${orgId}
         AND gi.quantity_rejected > 0
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       ORDER BY g.received_at DESC
     `;
     return { 
@@ -399,8 +404,8 @@ export const inventoryStoreToStoreIssueReport: ReportDefinition = {
       JOIN "stores" stt ON st.to_store_id = stt.id
       JOIN "item_master" i ON sti.item_id = i.id
       WHERE st."organizationId" = ${orgId}
-        AND st.created_at >= ${new Date(date_start)}
-        AND st.created_at <= ${new Date(date_end)}
+        AND st.created_at >= ${toStartOfDay(date_start)}
+        AND st.created_at <= ${toEndOfDay(date_end)}
         ${store_id ? Prisma.sql`AND (st.from_store_id = ${parseInt(store_id)} OR st.to_store_id = ${parseInt(store_id)})` : Prisma.empty}
       ORDER BY st.created_at DESC
     `;
@@ -448,8 +453,8 @@ export const inventoryBatchInflowOutflowReport: ReportDefinition = {
       LEFT JOIN "item_batches" b ON im.batch_id = b.id
       JOIN "stores" s ON im.store_id = s.id
       WHERE im."organizationId" = ${orgId}
-        AND im.created_at >= ${new Date(date_start)}
-        AND im.created_at <= ${new Date(date_end)}
+        AND im.created_at >= ${toStartOfDay(date_start)}
+        AND im.created_at <= ${toEndOfDay(date_end)}
         ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       GROUP BY b.batch_no, i.name, s.name
       ORDER BY i.name ASC
@@ -501,7 +506,7 @@ export const inventoryAsOnDateStockReport: ReportDefinition = {
           ROW_NUMBER() OVER(PARTITION BY im.store_id, im.item_id ORDER BY im.created_at DESC) as rn
         FROM "inventory_movements" im
         WHERE im."organizationId" = ${orgId}
-          AND im.created_at <= ${new Date(date_end)}
+          AND im.created_at <= ${toEndOfDay(date_end)}
           ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       )
       SELECT 
@@ -555,8 +560,8 @@ export const inventoryHsnTaxSummaryReport: ReportDefinition = {
       JOIN "goods_receipt_notes" g ON gi.grn_id = g.id
       JOIN "item_master" i ON gi.item_id = i.id
       WHERE g."organizationId" = ${orgId}
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       GROUP BY i.hsn_sac_code, gi.gst_rate
       ORDER BY SUM(gi.quantity_accepted * gi.unit_price) DESC
     `;
@@ -616,8 +621,8 @@ export const inventoryBinCardBatchReport: ReportDefinition = {
       JOIN "item_master" i ON im.item_id = i.id
       LEFT JOIN "item_batches" b ON im.batch_id = b.id
       WHERE im."organizationId" = ${orgId}
-        AND im.created_at >= ${new Date(date_start)}
-        AND im.created_at <= ${new Date(date_end)}
+        AND im.created_at >= ${toStartOfDay(date_start)}
+        AND im.created_at <= ${toEndOfDay(date_end)}
         ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       ORDER BY im.created_at ASC
     `;
@@ -671,8 +676,8 @@ export const inventoryBinCardItemReport: ReportDefinition = {
       JOIN "stores" s ON im.store_id = s.id
       JOIN "item_master" i ON im.item_id = i.id
       WHERE im."organizationId" = ${orgId}
-        AND im.created_at >= ${new Date(date_start)}
-        AND im.created_at <= ${new Date(date_end)}
+        AND im.created_at >= ${toStartOfDay(date_start)}
+        AND im.created_at <= ${toEndOfDay(date_end)}
         ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       ORDER BY im.created_at ASC
     `;
@@ -721,8 +726,8 @@ export const inventoryMovingItemsReport: ReportDefinition = {
       JOIN "item_master" i ON im.item_id = i.id
       WHERE im."organizationId" = ${orgId}
         AND im.movement_type IN ('ISSUE', 'INDENT_ISSUE', 'CONSUMPTION', 'PATIENT_CHARGE', 'TRANSFER_OUT', 'SUPPLIER_RETURN', 'EXPIRY_WRITEOFF', 'DAMAGE_WRITEOFF')
-        AND im.created_at >= ${new Date(date_start)}
-        AND im.created_at <= ${new Date(date_end)}
+        AND im.created_at >= ${toStartOfDay(date_start)}
+        AND im.created_at <= ${toEndOfDay(date_end)}
       GROUP BY i.item_code, i.name, i.item_type
       ORDER BY SUM(im.quantity_out) DESC
     `;
@@ -786,8 +791,8 @@ export const inventoryGrnPendingCnReport: ReportDefinition = {
       LEFT JOIN "vendors" v ON g.vendor_id = v.id
       WHERE g."organizationId" = ${orgId}
         AND gi.quantity_rejected > 0
-        AND g.received_at >= ${new Date(date_start)}
-        AND g.received_at <= ${new Date(date_end)}
+        AND g.received_at >= ${toStartOfDay(date_start)}
+        AND g.received_at <= ${toEndOfDay(date_end)}
       ORDER BY g.received_at DESC, g.grn_number
     `;
     const totals = rows.reduce((acc, row) => {
@@ -834,8 +839,8 @@ export const inventoryStoreConsumptionReport: ReportDefinition = {
       JOIN "item_master" i ON im.item_id = i.id
       WHERE im."organizationId" = ${orgId}
         AND im.movement_type = 'CONSUMPTION'
-        AND im.created_at >= ${new Date(date_start)}
-        AND im.created_at <= ${new Date(date_end)}
+        AND im.created_at >= ${toStartOfDay(date_start)}
+        AND im.created_at <= ${toEndOfDay(date_end)}
         ${store_id ? Prisma.sql`AND im.store_id = ${parseInt(store_id)}` : Prisma.empty}
       GROUP BY DATE(im.created_at), s.name, i.name
       ORDER BY DATE(im.created_at) DESC

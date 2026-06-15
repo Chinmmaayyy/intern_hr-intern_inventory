@@ -2,6 +2,12 @@ import { z } from 'zod';
 import { prisma } from '@/backend/db';
 import { ReportDefinition, ReportCategory, ValidatedFilters } from '../types';
 
+// ── Timezone-safe date boundary helpers ─────────────────────────────────
+const toStartOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T00:00:00.000Z') : new Date(d as string);
+const toEndOfDay = (d: string | Date): Date =>
+  typeof d === 'string' && !d.includes('T') ? new Date(d + 'T23:59:59.999Z') : new Date(d as string);
+
 // A generic query factory for diagnostic appointments to reduce code duplication
 const createDiagnosticAppointmentQuery = (departmentKeyword: string) => async (filters: ValidatedFilters, orgId: string) => {
   const { date_start, date_end } = filters;
@@ -17,8 +23,8 @@ const createDiagnosticAppointmentQuery = (departmentKeyword: string) => async (f
     LEFT JOIN "OPD_REG" p ON a.patient_id = p.patient_id
     WHERE a."organizationId" = ${orgId}
       AND a.department ILIKE ${'%' + departmentKeyword + '%'}
-      AND a.appointment_date >= ${new Date(date_start)}
-      AND a.appointment_date <= ${new Date(date_end)}
+      AND a.appointment_date >= ${toStartOfDay(date_start)}
+      AND a.appointment_date <= ${toEndOfDay(date_end)}
     ORDER BY a.appointment_date DESC
   `;
 
@@ -136,8 +142,8 @@ const createDiagnosticServiceQuery = (departmentKeyword: string) => async (filte
     LEFT JOIN "users" doc ON lo.doctor_id = doc.id
     WHERE lo."organizationId" = ${orgId}
       AND lo.test_type ILIKE ${'%' + departmentKeyword + '%'}
-      AND lo.created_at >= ${new Date(date_start)}
-      AND lo.created_at <= ${new Date(date_end)}
+      AND lo.created_at >= ${toStartOfDay(date_start)}
+      AND lo.created_at <= ${toEndOfDay(date_end)}
     ORDER BY lo.created_at DESC
   `;
   return { rows, totals: {} };
@@ -264,7 +270,7 @@ const createTatQuery = (departmentKeyword: string) => async (filters: ValidatedF
       AND lo.created_at >= $2
       AND lo.created_at <= $3
     ORDER BY lo.created_at DESC
-  `, orgId, new Date(date_start), new Date(date_end));
+  `, orgId, toStartOfDay(date_start), toEndOfDay(date_end));
 
   return { 
     rows: rows.map(r => ({
