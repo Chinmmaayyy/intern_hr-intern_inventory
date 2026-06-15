@@ -316,7 +316,7 @@ export const billingSummaryReport: ReportDefinition = {
         AND i.status != 'cancelled'
         AND i.created_at >= ${new Date(date_start)}
         AND i.created_at <= ${new Date(date_end)}
-        -- ${branch_id ? Prisma.sql`AND branch_id = ${branch_id}` : Prisma.empty}
+        ${branch_id ? Prisma.sql`AND i.branch_id = ${branch_id}` : Prisma.empty}
       GROUP BY DATE(i.created_at)
       ORDER BY DATE(i.created_at) DESC
     `;
@@ -628,6 +628,7 @@ export const billingDiscountSummaryReport: ReportDefinition = {
         AND i.total_discount > 0
         AND i.created_at >= ${new Date(date_start)}
         AND i.created_at <= ${new Date(date_end)}
+        ${branch_id ? Prisma.sql`AND i.branch_id = ${branch_id}` : Prisma.empty}
       ORDER BY DATE(i.created_at) DESC
     `;
 
@@ -744,7 +745,7 @@ export const billingRefundReport: ReportDefinition = {
         r.reason as "reason",
         COALESCE(r.processed_by, 'System') as "processed_by"
       FROM refunds r
-      LEFT JOIN invoices i ON i.invoice_number = r.invoice_id AND i."organizationId" = ${orgId}
+      LEFT JOIN invoices i ON i.id::text = r.invoice_id AND i."organizationId" = ${orgId}
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       LEFT JOIN payments p ON p.id::text = r.payment_id
       WHERE r."organizationId" = ${orgId}
@@ -806,7 +807,7 @@ export const billingOpRefundReport: ReportDefinition = {
         r.amount as "refund_amount",
         COALESCE(r.processed_by, 'System') as "processed_by"
       FROM refunds r
-      JOIN invoices i ON r.invoice_id = i.invoice_number AND i."organizationId" = ${orgId}
+      JOIN invoices i ON r.invoice_id = i.id::text AND i."organizationId" = ${orgId}
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       LEFT JOIN "users" u ON i.doctor_id = u.id
       WHERE r."organizationId" = ${orgId}
@@ -944,8 +945,21 @@ export const billingDoctorPayoutReport: ReportDefinition = {
         ii.description as "service_name",
         COALESCE(opd.full_name, 'Unknown') as "patient_name",
         ii.total_price as "billed_amount",
-        '50%' as "doctor_share_percent",
-        (ii.total_price * 0.5) as "payout_amount"
+        -- Use the per-doctor consultation_fee as the contracted payout rate.
+        -- consultation_fee is stored on users and represents the doctor's share
+        -- per unit billed. We express it as a percentage of the line-item price.
+        -- If consultation_fee is 0 or the doctor record is missing we fall back to 0.
+        CASE
+          WHEN COALESCE(u.consultation_fee, 0) = 0 OR COALESCE(ii.total_price, 0) = 0
+            THEN '0%'
+          ELSE CONCAT(
+            ROUND(
+              (COALESCE(u.consultation_fee, 0) / NULLIF(ii.total_price, 0)) * 100
+            )::text,
+            '%'
+          )
+        END as "doctor_share_percent",
+        LEAST(COALESCE(u.consultation_fee, 0), COALESCE(ii.total_price, 0)) as "payout_amount"
       FROM invoice_items ii
       JOIN invoices i ON ii.invoice_id = i.id
       LEFT JOIN "users" u ON i.doctor_id = u.id
@@ -1000,9 +1014,14 @@ export const billingDoctorAccountPayableReport: ReportDefinition = {
         u.id as "doctor_id",
         COALESCE(u.name, 'Unknown') as "doctor_name",
         COALESCE(u.department, u.specialty, 'Unknown') as "department",
-        SUM(ii.total_price * 0.5) as "total_earned",
+        -- total_earned: sum of per-doctor contracted consultation_fee across all
+        -- non-cancelled line items up to date_end. consultation_fee on the users
+        -- record is the actual per-visit payout rate agreed with the doctor.
+        -- We cap payout per line at min(consultation_fee, line_item_price) to
+        -- avoid overpaying when a line item is cheaper than the base fee.
+        SUM(LEAST(COALESCE(u.consultation_fee, 0), COALESCE(ii.total_price, 0))) as "total_earned",
         0 as "total_paid",
-        SUM(ii.total_price * 0.5) as "balance_payable"
+        SUM(LEAST(COALESCE(u.consultation_fee, 0), COALESCE(ii.total_price, 0))) as "balance_payable"
       FROM invoice_items ii
       JOIN invoices i ON ii.invoice_id = i.id
       JOIN "users" u ON i.doctor_id = u.id
@@ -1010,8 +1029,8 @@ export const billingDoctorAccountPayableReport: ReportDefinition = {
         AND i.status != 'cancelled'
         AND i.created_at <= ${new Date(date_end)}
         AND (u.role = 'doctor' OR u.role = 'surgeon')
-      GROUP BY u.id, u.name, u.department, u.specialty
-      ORDER BY SUM(ii.total_price * 0.5) DESC
+      GROUP BY u.id, u.name, u.department, u.specialty, u.consultation_fee
+      ORDER BY SUM(LEAST(COALESCE(u.consultation_fee, 0), COALESCE(ii.total_price, 0))) DESC
     `;
     const totals = rows.reduce((acc, row) => {
       acc.total_earned += Number(row.total_earned || 0);
@@ -1234,7 +1253,7 @@ export const billingDepositRefundReport: ReportDefinition = {
         r.amount as "refund_amount",
         COALESCE(r.processed_by, 'System') as "processed_by"
       FROM refunds r
-      JOIN invoices i ON r.invoice_id = i.invoice_number AND i."organizationId" = ${orgId}
+      JOIN invoices i ON r.invoice_id = i.id::text AND i."organizationId" = ${orgId}
       LEFT JOIN payments p ON p.id::text = r.payment_id
       LEFT JOIN "OPD_REG" opd ON i.patient_id = opd.patient_id
       WHERE r."organizationId" = ${orgId}
