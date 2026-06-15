@@ -62,33 +62,33 @@ import type { ColumnSpec, FilterSpec } from '@/lib/mis/types';
 
 /** Safe, serialisable payload — no ZodSchema, no functions. */
 export interface UniversalPayload {
-    async:   boolean;
-    jobId?:  string;
-    rows?:   Record<string, unknown>[];
+    async: boolean;
+    jobId?: string;
+    rows?: Record<string, unknown>[];
     totals?: Record<string, number>;
     /**
      * Set to 'UNAUTHORIZED' by generateReport() when the user's role does not
      * grant the requiredPermission for this report. The shell renders
      * <AccessDeniedState> instead of crashing or showing empty data.
      */
-    error?:  string;
+    error?: string;
 }
 
 export interface UniversalReportShellProps {
     /** Registry key — forwarded to ExportExcelButton. */
-    reportId:   string;
+    reportId: string;
     /** Human-readable report name — shown in the table card header. */
     reportName: string;
     /** Column definitions from reportDef.columns — drives all table rendering. */
-    columns:    ColumnSpec[];
+    columns: ColumnSpec[];
     /** Response from generateReport() — rows, totals, and async state. */
-    payload:    UniversalPayload;
+    payload: UniversalPayload;
     /**
      * Registry ID of the detail/child report to open on row click.
      * If omitted, rows are not clickable and no drill-down is rendered.
      * Source: ReportDefinition.drillDownTo from the registry.
      */
-    drillDownTo?:  string;
+    drillDownTo?: string;
     /**
      * Which field in the clicked summary row to use as the filter value
      * when calling generateReport(drillDownTo, { date_start, date_end, … }).
@@ -101,8 +101,8 @@ export interface UniversalReportShellProps {
 // ─── Cell formatters ──────────────────────────────────────────────────────────
 
 const INR = new Intl.NumberFormat('en-IN', {
-    style:                 'currency',
-    currency:              'INR',
+    style: 'currency',
+    currency: 'INR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
 });
@@ -137,19 +137,19 @@ function formatCell(value: unknown, type: ColumnSpec['type']): string {
                 value instanceof Date
                     ? value
                     : (() => {
-                          const s = String(value);
-                          // Safe local-timezone parse for YYYY-MM-DD strings
-                          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-                              const [y, m, day] = s.split('-').map(Number);
-                              return new Date(y, m - 1, day);
-                          }
-                          // Fallback for datetime strings (e.g. ISO-8601 from Prisma)
-                          return new Date(s);
-                      })();
+                        const s = String(value);
+                        // Safe local-timezone parse for YYYY-MM-DD strings
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                            const [y, m, day] = s.split('-').map(Number);
+                            return new Date(y, m - 1, day);
+                        }
+                        // Fallback for datetime strings (e.g. ISO-8601 from Prisma)
+                        return new Date(s);
+                    })();
             return d.toLocaleDateString('en-IN', {
-                day:   '2-digit',
+                day: '2-digit',
                 month: 'short',
-                year:  'numeric',
+                year: 'numeric',
             });
         }
 
@@ -173,9 +173,9 @@ function effectiveAlign(col: ColumnSpec): 'left' | 'center' | 'right' {
 }
 
 const ALIGN_CLASS: Record<'left' | 'center' | 'right', string> = {
-    left:   'text-left',
+    left: 'text-left',
     center: 'text-center',
-    right:  'text-right',
+    right: 'text-right',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -193,19 +193,19 @@ export function UniversalReportShell({
     const [isScheduleOpen, setIsScheduleOpen] = useState(false);
 
     // ── Bug 1 fix: live payload state — initialized from SSR, updated on re-fetch ──
-    const [livePayload, setLivePayload]   = useState<UniversalPayload>(payload);
+    const [livePayload, setLivePayload] = useState<UniversalPayload>(payload);
     const [isRefetching, setIsRefetching] = useState(false);
     const isMounted = useRef(false);
 
     // Read URL params — written by MISFilterEngine via router.push()
-    const startDate       = searchParams.get('startDate') ?? '';
-    const endDate         = searchParams.get('endDate')   ?? '';
-    const doctor          = searchParams.get('doctor')    ?? '';
-    const department_id   = searchParams.get('department_id') ?? '';
-    const bill_type       = searchParams.get('bill_type') ?? '';
-    const statusVal       = searchParams.get('status') ?? '';
-    const store_id        = searchParams.get('store_id') ?? '';
-    const branch_id       = searchParams.get('branch_id') ?? '';
+    const startDate = searchParams.get('startDate') ?? '';
+    const endDate = searchParams.get('endDate') ?? '';
+    const doctor = searchParams.get('doctor') ?? '';
+    const department_id = searchParams.get('department_id') ?? '';
+    const bill_type = searchParams.get('bill_type') ?? '';
+    const statusVal = searchParams.get('status') ?? '';
+    const store_id = searchParams.get('store_id') ?? '';
+    const branch_id = searchParams.get('branch_id') ?? '';
     const service_category = searchParams.get('service_category') ?? '';
 
     // Serialise ALL current params into a stable string for the useEffect dep.
@@ -218,14 +218,14 @@ export function UniversalReportShell({
         }
 
         const currentFilters: Record<string, string | undefined> = {
-            date_start:       startDate       || undefined,
-            date_end:         endDate         || undefined,
-            doctor_id:        doctor          || undefined,
-            department_id:    department_id   || undefined,
-            bill_type:        bill_type       || undefined,
-            status:           statusVal       || undefined,
-            store_id:         store_id        || undefined,
-            branch_id:        branch_id       || undefined,
+            date_start: startDate || undefined,
+            date_end: endDate || undefined,
+            doctor_id: doctor || undefined,
+            department_id: department_id || undefined,
+            bill_type: bill_type || undefined,
+            status: statusVal || undefined,
+            store_id: store_id || undefined,
+            branch_id: branch_id || undefined,
             service_category: service_category || undefined,
         };
 
@@ -254,7 +254,7 @@ export function UniversalReportShell({
         return <AsyncQueuedBanner jobId={livePayload.jobId} />;
     }
 
-    const rows   = livePayload.rows   ?? [];
+    const rows = livePayload.rows ?? [];
     const totals = livePayload.totals ?? {};
 
     const hasSumColumns = columns.some((c) => c.total);
@@ -270,14 +270,14 @@ export function UniversalReportShell({
     }, [columns]);
 
     const exportFilters = {
-        date_start:       startDate       || undefined,
-        date_end:         endDate         || undefined,
-        doctor_id:        doctor          || undefined,
-        department_id:    department_id   || undefined,
-        bill_type:        bill_type       || undefined,
-        status:           statusVal       || undefined,
-        store_id:         store_id        || undefined,
-        branch_id:        branch_id       || undefined,
+        date_start: startDate || undefined,
+        date_end: endDate || undefined,
+        doctor_id: doctor || undefined,
+        department_id: department_id || undefined,
+        bill_type: bill_type || undefined,
+        status: statusVal || undefined,
+        store_id: store_id || undefined,
+        branch_id: branch_id || undefined,
         service_category: service_category || undefined,
     };
 
@@ -319,21 +319,21 @@ export function UniversalReportShell({
 // guard.
 
 interface DrillDownWrapperProps {
-    reportId:             string;
-    reportName:           string;
-    columns:              ColumnSpec[];
-    rows:                 Record<string, unknown>[];
-    totals:               Record<string, number>;
-    showTotalsRow:        boolean;
+    reportId: string;
+    reportName: string;
+    columns: ColumnSpec[];
+    rows: Record<string, unknown>[];
+    totals: Record<string, number>;
+    showTotalsRow: boolean;
     leadingNonTotalCount: number;
-    exportFilters:        Record<string, string | undefined>;
-    drillDownTo?:         string;
-    drillDownKey?:        string;
-    filterSpec?:          FilterSpec;
-    isScheduleOpen:       boolean;
-    setIsScheduleOpen:    React.Dispatch<React.SetStateAction<boolean>>;
+    exportFilters: Record<string, string | undefined>;
+    drillDownTo?: string;
+    drillDownKey?: string;
+    filterSpec?: FilterSpec;
+    isScheduleOpen: boolean;
+    setIsScheduleOpen: React.Dispatch<React.SetStateAction<boolean>>;
     // Bug 1 fix: show a subtle overlay while a client-side re-fetch is in progress
-    isRefetching?:        boolean;
+    isRefetching?: boolean;
 }
 
 // ─── Pagination constants ─────────────────────────────────────────────────────
@@ -365,12 +365,12 @@ function DrillDownWrapper({
     isRefetching,
 }: DrillDownWrapperProps) {
     // ── Drill-Down state ─────────────────────────────────────────────────────
-    const [drillRow,     setDrillRow]     = useState<Record<string, unknown> | null>(null);
+    const [drillRow, setDrillRow] = useState<Record<string, unknown> | null>(null);
     const [drillPayload, setDrillPayload] = useState<UniversalPayload | null>(null);
     const [drillColumns, setDrillColumns] = useState<ColumnSpec[]>([]);
-    const [drillName,    setDrillName]    = useState('');
+    const [drillName, setDrillName] = useState('');
     const [drillLoading, setDrillLoading] = useState(false);
-    const [drillError,   setDrillError]   = useState<string | null>(null);
+    const [drillError, setDrillError] = useState<string | null>(null);
 
     // ── Gap #13: Pagination state for the main table ─────────────────────────
     const [currentPage, setCurrentPage] = useState(1);
@@ -396,11 +396,11 @@ function DrillDownWrapper({
     // Derive sorted rows; memoized so we only re-sort when rows or sort state change.
     const sortedRows = useMemo(() => {
         if (!sortCol) return rows;
-        const colDef    = columns.find((c) => c.key === sortCol);
+        const colDef = columns.find((c) => c.key === sortCol);
         const isNumeric = colDef?.type === 'currency' || colDef?.type === 'number' || colDef?.type === 'percent';
         return [...rows].sort((a, b) => {
-            const av  = a[sortCol];
-            const bv  = b[sortCol];
+            const av = a[sortCol];
+            const bv = b[sortCol];
             const cmp = isNumeric
                 ? Number(av ?? 0) - Number(bv ?? 0)
                 : String(av ?? '').localeCompare(String(bv ?? ''), 'en-IN');
@@ -457,7 +457,7 @@ function DrillDownWrapper({
         const datePart = isoDateMatch ? isoDateMatch[1] : rawStr;
 
         const drillStart = `${datePart}T00:00:00.000Z`;
-        const drillEnd   = `${datePart}T23:59:59.999Z`;
+        const drillEnd = `${datePart}T23:59:59.999Z`;
 
         try {
             const [metaResult, reportResult] = await Promise.all([
@@ -468,7 +468,7 @@ function DrillDownWrapper({
                     // carries undefined values from an unset URL date param.
                     ...exportFilters,
                     date_start: drillStart,
-                    date_end:   drillEnd,
+                    date_end: drillEnd,
                 }),
             ]);
 
@@ -490,12 +490,20 @@ function DrillDownWrapper({
     }, []);
 
     // ── Gap #13: Pagination helpers ──────────────────────────────────────────
-    const totalPages    = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
     // Clamp: if rows shrink (e.g. filter change), stay in bounds.
-    const safePage      = Math.min(currentPage, totalPages);
-    const pageStart     = (safePage - 1) * PAGE_SIZE;
-    const pagedRows     = sortedRows.slice(pageStart, pageStart + PAGE_SIZE);
+    const safePage = Math.min(currentPage, totalPages);
+    const pageStart = (safePage - 1) * PAGE_SIZE;
+    const pagedRows = sortedRows.slice(pageStart, pageStart + PAGE_SIZE);
     const showPaginator = sortedRows.length > PAGE_SIZE;
+
+    // Create a strict string-only object for MISScheduleModal
+    const scheduleFilters: Record<string, string> = {};
+    Object.entries(exportFilters).forEach(([key, value]) => {
+        if (value !== undefined) {
+            scheduleFilters[key] = value;
+        }
+    });
 
     return (
         <div className="space-y-5">
@@ -591,30 +599,26 @@ function DrillDownWrapper({
                                                     hover:text-emerald-600 transition-colors
                                                     ${isActiveSort ? 'text-emerald-600' : 'text-gray-500'}
                                                 `}
-                                                aria-label={`Sort by ${col.label} ${
-                                                    isActiveSort
-                                                        ? sortDir === 'asc' ? 'descending' : 'ascending'
-                                                        : 'ascending'
-                                                }`}
+                                                aria-label={`Sort by ${col.label} ${isActiveSort
+                                                    ? sortDir === 'asc' ? 'descending' : 'ascending'
+                                                    : 'ascending'
+                                                    }`}
                                             >
                                                 {col.label}
-                                                <span className={`flex flex-col gap-px ml-0.5 transition-opacity ${
-                                                    isActiveSort ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'
-                                                }`}>
+                                                <span className={`flex flex-col gap-px ml-0.5 transition-opacity ${isActiveSort ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'
+                                                    }`}>
                                                     <ChevronLeft
-                                                        className={`h-2 w-2 -rotate-90 ${
-                                                            isActiveSort && sortDir === 'asc'
-                                                                ? 'text-emerald-600'
-                                                                : 'text-gray-400'
-                                                        }`}
+                                                        className={`h-2 w-2 -rotate-90 ${isActiveSort && sortDir === 'asc'
+                                                            ? 'text-emerald-600'
+                                                            : 'text-gray-400'
+                                                            }`}
                                                         aria-hidden="true"
                                                     />
                                                     <ChevronRight
-                                                        className={`h-2 w-2 -rotate-90 ${
-                                                            isActiveSort && sortDir === 'desc'
-                                                                ? 'text-emerald-600'
-                                                                : 'text-gray-400'
-                                                        }`}
+                                                        className={`h-2 w-2 -rotate-90 ${isActiveSort && sortDir === 'desc'
+                                                            ? 'text-emerald-600'
+                                                            : 'text-gray-400'
+                                                            }`}
                                                         aria-hidden="true"
                                                     />
                                                 </span>
@@ -628,9 +632,9 @@ function DrillDownWrapper({
                         {/* ── tbody — paged rows only (Gap #13) ──────────── */}
                         <tbody>
                             {pagedRows.map((row, rowIdx) => {
-                                const actualIdx   = pageStart + rowIdx;
-                                const isEven      = actualIdx % 2 === 0;
-                                const isSelected  = drillRow === row;
+                                const actualIdx = pageStart + rowIdx;
+                                const isEven = actualIdx % 2 === 0;
+                                const isSelected = drillRow === row;
                                 const isDrillable = Boolean(drillDownTo && drillDownKey);
 
                                 return (
@@ -652,11 +656,11 @@ function DrillDownWrapper({
                                         `}
                                     >
                                         {columns.map((col) => {
-                                            const value     = row[col.key];
-                                            const align     = effectiveAlign(col);
+                                            const value = row[col.key];
+                                            const align = effectiveAlign(col);
                                             const isNumeric =
                                                 col.type === 'currency' ||
-                                                col.type === 'number'   ||
+                                                col.type === 'number' ||
                                                 col.type === 'percent';
 
                                             return (
@@ -697,7 +701,7 @@ function DrillDownWrapper({
 
                                     {/* One <td> per remaining (totalled) column */}
                                     {columns.slice(leadingNonTotalCount).map((col) => {
-                                        const align      = effectiveAlign(col);
+                                        const align = effectiveAlign(col);
                                         const totalValue = col.total && totals[col.key] !== undefined
                                             ? totals[col.key]
                                             : undefined;
@@ -746,11 +750,11 @@ function DrillDownWrapper({
                     onClose={handleDrillClose}
                 />
             )}
-            
+
             {isScheduleOpen && (
                 <MISScheduleModal
                     reportId={reportId}
-                    currentFilters={exportFilters}
+                    currentFilters={scheduleFilters}
                     onClose={() => setIsScheduleOpen(false)}
                 />
             )}
@@ -762,14 +766,14 @@ function DrillDownWrapper({
 // Isolated sub-component so the type→style mapping stays readable.
 
 interface DataCellProps {
-    value:     unknown;
-    type:      ColumnSpec['type'];
+    value: unknown;
+    type: ColumnSpec['type'];
     isNumeric: boolean;
 }
 
 function DataCell({ value, type, isNumeric }: DataCellProps) {
     const formatted = formatCell(value, type);
-    const isEmpty   = formatted === '—';
+    const isEmpty = formatted === '—';
 
     if (isEmpty) {
         return <span className="text-gray-300 select-none">—</span>;
@@ -808,13 +812,13 @@ function DataCell({ value, type, isNumeric }: DataCellProps) {
 // Only mounted when rows.length > PAGE_SIZE.
 
 interface PaginatorProps {
-    current:    number;
-    total:      number;
+    current: number;
+    total: number;
     rowsOnPage: number;
-    totalRows:  number;
-    onPrev:     () => void;
-    onNext:     () => void;
-    onPage:     (page: number) => void;
+    totalRows: number;
+    onPrev: () => void;
+    onNext: () => void;
+    onPage: (page: number) => void;
 }
 
 function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPage }: PaginatorProps) {
@@ -839,7 +843,7 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
     }
 
     const pageStart = (current - 1) * PAGE_SIZE + 1;
-    const pageEnd   = pageStart + rowsOnPage - 1;
+    const pageEnd = pageStart + rowsOnPage - 1;
 
     const btnBase = 'inline-flex items-center justify-center min-w-[30px] h-[30px] px-1.5 text-[12px] font-bold rounded-lg transition-colors select-none';
 
@@ -874,11 +878,10 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
                             onClick={() => onPage(p as number)}
                             aria-label={`Page ${p}`}
                             aria-current={p === current ? 'page' : undefined}
-                            className={`${btnBase} ${
-                                p === current
-                                    ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            }`}
+                            className={`${btnBase} ${p === current
+                                ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
                         >
                             {p}
                         </button>
@@ -903,12 +906,12 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
 // ─── DrillDownPanel ───────────────────────────────────────────────────────────
 
 interface DrillDownPanelProps {
-    loading:  boolean;
-    error:    string | null;
-    name:     string;
-    columns:  ColumnSpec[];
-    payload:  UniversalPayload | null;
-    onClose:  () => void;
+    loading: boolean;
+    error: string | null;
+    name: string;
+    columns: ColumnSpec[];
+    payload: UniversalPayload | null;
+    onClose: () => void;
 }
 
 /**
@@ -924,7 +927,7 @@ interface DrillDownPanelProps {
  *  - Empty: brief "No matching records" notice
  */
 function DrillDownPanel({ loading, error, name, columns, payload, onClose }: DrillDownPanelProps) {
-    const rows   = payload?.rows   ?? [];
+    const rows = payload?.rows ?? [];
     const totals = payload?.totals ?? {};
 
     const [excelExporting, setExcelExporting] = useState(false);
@@ -933,7 +936,7 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
         if (!payload || !payload.rows || payload.rows.length === 0) return;
         const rowKeys = columns.map(c => c.key);
         const headers = columns.map(c => `"${String(c.label).replace(/"/g, '""')}"`).join(',');
-        const csvRows = payload.rows.map(r => 
+        const csvRows = payload.rows.map(r =>
             rowKeys.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(',')
         );
         const csv = [headers, ...csvRows].join('\n');
@@ -1037,8 +1040,8 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
                     {Array.from({ length: 6 }).map((_, i) => (
                         <div key={i} className="flex gap-4 animate-pulse">
                             <div className="h-4 bg-gray-200 rounded flex-1" style={{ opacity: 1 - i * 0.12 }} />
-                            <div className="h-4 bg-gray-200 rounded w-24"  style={{ opacity: 1 - i * 0.12 }} />
-                            <div className="h-4 bg-gray-200 rounded w-28"  style={{ opacity: 1 - i * 0.12 }} />
+                            <div className="h-4 bg-gray-200 rounded w-24" style={{ opacity: 1 - i * 0.12 }} />
+                            <div className="h-4 bg-gray-200 rounded w-28" style={{ opacity: 1 - i * 0.12 }} />
                         </div>
                     ))}
                 </div>
@@ -1116,7 +1119,7 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
                                         {columns.map((col) => {
                                             const isNumeric =
                                                 col.type === 'currency' ||
-                                                col.type === 'number'   ||
+                                                col.type === 'number' ||
                                                 col.type === 'percent';
                                             return (
                                                 <td
@@ -1224,16 +1227,16 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
 
 /** Shape of the JSON response from GET /api/mis/jobs/[jobId] */
 interface PollJobResponse {
-    id:          string;
-    status:      string;
-    progress:    number;
-    file_key?:   string | null;
-    error?:      string | null;
-    createdAt:   string;
+    id: string;
+    status: string;
+    progress: number;
+    file_key?: string | null;
+    error?: string | null;
+    createdAt: string;
     finished_at: string | null;
 }
 
-const POLL_INTERVAL_MS  = 3000;
+const POLL_INTERVAL_MS = 3000;
 const TERMINAL_STATUSES = ['Completed', 'Failed', 'Expired'] as const;
 type TerminalStatus = typeof TERMINAL_STATUSES[number];
 
@@ -1242,11 +1245,11 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
     const [jobStatus, setJobStatus] = useState<PollJobResponse | null>(null);
 
     // Fires the completion toast exactly once per jobId mount.
-    const toastFiredRef   = useRef(false);
+    const toastFiredRef = useRef(false);
     // Holds the setInterval handle so we can clear it on terminal state.
-    const intervalRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+    const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     // Holds the current AbortController so we can cancel in-flight fetches.
-    const abortRef        = useRef<AbortController | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         // No jobId — nothing to poll.
@@ -1260,8 +1263,8 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
         const poll = async () => {
             // Cancel any request still in-flight from the previous tick.
             if (abortRef.current) abortRef.current.abort();
-            const controller    = new AbortController();
-            abortRef.current    = controller;
+            const controller = new AbortController();
+            abortRef.current = controller;
 
             try {
                 // ────────────────────────────────────────────────────────────────
@@ -1269,8 +1272,8 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
                 // Action call. It does not invalidate the Next.js router cache.
                 // ────────────────────────────────────────────────────────────────
                 const res = await fetch(`/api/mis/jobs/${jobId}`, {
-                    signal:  controller.signal,
-                    cache:   'no-store',   // never cache polling responses
+                    signal: controller.signal,
+                    cache: 'no-store',   // never cache polling responses
                     headers: { Accept: 'application/json' },
                 });
 
@@ -1345,8 +1348,7 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
                             );
                         } else if (data.status === 'Failed') {
                             toast.error(
-                                `Report job failed: ${
-                                    data.error ?? 'Unknown error. Please try again.'
+                                `Report job failed: ${data.error ?? 'Unknown error. Please try again.'
                                 }`,
                                 { duration: 8000, id: `mis-job-failed-${jobId}` }
                             );
@@ -1376,19 +1378,19 @@ function AsyncQueuedBanner({ jobId }: { jobId?: string }) {
         // Runs when the component unmounts OR jobId changes.
         // Cancels in-flight HTTP requests and the polling interval.
         return () => {
-            if (abortRef.current)  abortRef.current.abort();
+            if (abortRef.current) abortRef.current.abort();
             if (intervalRef.current) clearInterval(intervalRef.current);
             intervalRef.current = null;
         };
     }, [jobId]); // Re-run only when jobId changes — stable dep array prevents extra ticks
 
     // Derive a human-readable status label for the banner pill.
-    const progressPct    = (jobStatus?.progress ?? 0) > 0 ? ` ${jobStatus!.progress}%` : '';
-    const pollingStatus  = !jobStatus
+    const progressPct = (jobStatus?.progress ?? 0) > 0 ? ` ${jobStatus!.progress}%` : '';
+    const pollingStatus = !jobStatus
         ? 'Queued'
         : jobStatus.status === 'Running'
-        ? `Processing…${progressPct}`
-        : jobStatus.status;
+            ? `Processing…${progressPct}`
+            : jobStatus.status;
 
     return (
         <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
