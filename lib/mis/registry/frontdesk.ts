@@ -285,13 +285,13 @@ export const doctorEventOffSummaryReport: ReportDefinition = {
       ORDER BY "total_events" DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         total_events: Number(r.total_events || 0),
         total_hours: Number(r.total_hours || 0)
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -338,13 +338,13 @@ export const appointmentTatReport: ReportDefinition = {
       ORDER BY a.appointment_date DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         wait_time: Number(r.wait_time || 0),
         consultation_duration: Number(r.consultation_duration || 0)
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -385,14 +385,14 @@ export const doctorFootfallReport: ReportDefinition = {
       ORDER BY "total_appointments" DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         total_appointments: Number(r.total_appointments || 0),
         completed_consultations: Number(r.completed_consultations || 0),
         no_shows: Number(r.no_shows || 0)
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -580,12 +580,12 @@ export const ipDischargeReport: ReportDefinition = {
       ORDER BY adm.discharge_date DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         length_of_stay: Number(r.length_of_stay || 0),
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -750,10 +750,7 @@ export const emergencyAdmissionsReport: ReportDefinition = {
   // The department dropdown was rendered by MISFilterEngine but there was no Zod field
   // for department_id and no WHERE clause predicate — it was completely non-functional.
   // The admission_source = 'Emergency' predicate is the correct filter for this report.
-  filters: z.object({
-    date_start: z.string().or(z.date()),
-    date_end: z.string().or(z.date()),
-  }),
+
   columns: [
     { key: 'admission_date', label: 'Admission Date', type: 'date' },
     { key: 'ip_number', label: 'IP Number', type: 'string' },
@@ -829,15 +826,15 @@ export const bedOccupancyReport: ReportDefinition = {
       ORDER BY "occupancy_rate" DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         total_beds: Number(r.total_beds || 0),
         occupied_beds: Number(r.occupied_beds || 0),
         available_beds: Number(r.available_beds || 0),
         occupancy_rate: Number(r.occupancy_rate || 0),
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -884,12 +881,12 @@ export const emergencyDischargeReport: ReportDefinition = {
       ORDER BY adm.discharge_date DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         length_of_stay: Number(r.length_of_stay || 0),
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
@@ -1042,12 +1039,12 @@ export const expiredPatientsReport: ReportDefinition = {
       ORDER BY adm.discharge_date DESC
     `;
 
-    return { 
+    return {
       rows: rows.map(r => ({
         ...r,
         length_of_stay: Number(r.length_of_stay || 0),
-      })), 
-      totals: {} 
+      })),
+      totals: {}
     };
   },
 };
