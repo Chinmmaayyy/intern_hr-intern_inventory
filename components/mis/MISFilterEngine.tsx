@@ -131,10 +131,9 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                     </span>
                 </div>
 
-                <div className="flex items-center gap-2 flex-1 min-w-[280px]">
-                    <CalendarRange className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                <div className="flex items-center gap-2 flex-1 min-w-[320px]">
                     <div className="flex items-center gap-2 flex-1">
-                        <div className="flex-1 min-w-0">
+                        <div className="relative flex-1 min-w-0 group">
                             <label htmlFor="mis-start-date" className="sr-only">Start date</label>
                             <input
                                 suppressHydrationWarning
@@ -142,12 +141,16 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                                 type="date"
                                 value={startDate}
                                 onChange={handleStartDate}
+                                onClick={(e) => {
+                                    try { e.currentTarget.showPicker(); } catch {}
+                                }}
                                 max={endDate || undefined}
-                                className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-150 placeholder:text-gray-400"
+                                className="w-full text-sm font-semibold text-stone-700 bg-white border border-gray-200 rounded-xl pl-10 pr-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-200 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] hover:border-emerald-300 hover:shadow-md cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-datetime-edit]:py-0"
                             />
+                            <CalendarRange className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500/70 group-hover:text-emerald-600 transition-colors pointer-events-none" />
                         </div>
-                        <span className="text-xs text-gray-400 font-medium shrink-0">to</span>
-                        <div className="flex-1 min-w-0">
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest shrink-0 px-1">TO</span>
+                        <div className="relative flex-1 min-w-0 group">
                             <label htmlFor="mis-end-date" className="sr-only">End date</label>
                             <input
                                 suppressHydrationWarning
@@ -155,9 +158,13 @@ export function MISFilterEngine({ reportId, doctorOptions, showDoctorFilter = tr
                                 type="date"
                                 value={endDate}
                                 onChange={handleEndDate}
+                                onClick={(e) => {
+                                    try { e.currentTarget.showPicker(); } catch {}
+                                }}
                                 min={startDate || undefined}
-                                className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-150"
+                                className="w-full text-sm font-semibold text-stone-700 bg-white border border-gray-200 rounded-xl pl-10 pr-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-200 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] hover:border-emerald-300 hover:shadow-md cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-datetime-edit]:py-0"
                             />
+                            <CalendarRange className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500/70 group-hover:text-emerald-600 transition-colors pointer-events-none" />
                         </div>
                     </div>
                 </div>

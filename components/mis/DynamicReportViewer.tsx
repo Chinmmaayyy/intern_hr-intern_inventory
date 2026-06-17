@@ -4,7 +4,7 @@
 
 import React, { useState } from 'react';
 import { generateReport, exportReportToExcel } from '@/app/actions/mis-report-actions';
-import { Play, Download, Loader2, Info } from 'lucide-react';
+import { Play, Download, Loader2, Info, Calendar } from 'lucide-react';
 
 interface ColumnDef {
   key: string;
@@ -109,23 +109,35 @@ export function DynamicReportViewer({ reportId, reportDescription, columns }: Dy
         <form onSubmit={handleGenerate} className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">Start Date</label>
-            <input
-              type="date"
-              required
-              value={filters.date_start}
-              onChange={e => setFilters(f => ({ ...f, date_start: e.target.value }))}
-              className="bg-white border border-gray-200 text-sm font-semibold text-gray-900 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm w-44"
-            />
+            <div className="relative group w-44">
+              <input
+                type="date"
+                required
+                value={filters.date_start}
+                onChange={e => setFilters(f => ({ ...f, date_start: e.target.value }))}
+                onClick={(e) => {
+                  try { e.currentTarget.showPicker(); } catch {}
+                }}
+                className="w-full bg-white border border-gray-200 text-sm font-semibold text-gray-700 rounded-xl pl-10 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] hover:border-indigo-300 hover:shadow-md cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-datetime-edit]:py-0"
+              />
+              <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400 group-hover:text-indigo-600 transition-colors pointer-events-none" />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">End Date</label>
-            <input
-              type="date"
-              required
-              value={filters.date_end}
-              onChange={e => setFilters(f => ({ ...f, date_end: e.target.value }))}
-              className="bg-white border border-gray-200 text-sm font-semibold text-gray-900 rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm w-44"
-            />
+            <div className="relative group w-44">
+              <input
+                type="date"
+                required
+                value={filters.date_end}
+                onChange={e => setFilters(f => ({ ...f, date_end: e.target.value }))}
+                onClick={(e) => {
+                  try { e.currentTarget.showPicker(); } catch {}
+                }}
+                className="w-full bg-white border border-gray-200 text-sm font-semibold text-gray-700 rounded-xl pl-10 pr-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] hover:border-indigo-300 hover:shadow-md cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-datetime-edit]:py-0"
+              />
+              <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400 group-hover:text-indigo-600 transition-colors pointer-events-none" />
+            </div>
           </div>
           <button
             type="submit"
