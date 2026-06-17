@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Clock, Mail, FileSpreadsheet, Loader2, Save, CalendarDays, AlertCircle, List, Trash2 } from 'lucide-react';
+import { X, Clock, Mail, FileSpreadsheet, Loader2, Save, CalendarDays, AlertCircle, List, Trash2, CalendarRange } from 'lucide-react';
 import { saveSchedule } from '@/app/actions/mis-report-actions';
 
 interface MISScheduleModalProps {
@@ -12,6 +12,7 @@ interface MISScheduleModalProps {
 
 export function MISScheduleModal({ reportId, currentFilters, onClose }: MISScheduleModalProps) {
     const [frequency, setFrequency] = useState('daily');
+    const [specificDate, setSpecificDate] = useState('');
     const [time, setTime] = useState('08:00');
     const [recipients, setRecipients] = useState('');
     const [format, setFormat] = useState('excel');
@@ -82,6 +83,19 @@ export function MISScheduleModal({ reportId, currentFilters, onClose }: MISSched
             cronSpec = `${minute} ${hour} * * 1`; // every Monday
         } else if (frequency === 'monthly') {
             cronSpec = `${minute} ${hour} 1 * *`; // 1st of every month
+        } else if (frequency === 'once') {
+            if (!specificDate) {
+                setErrorMsg('Please select a specific date for the one-time schedule.');
+                return;
+            }
+            const dateObj = new Date(specificDate);
+            if (isNaN(dateObj.getTime())) {
+                setErrorMsg('Invalid date selected.');
+                return;
+            }
+            const day = dateObj.getDate();
+            const month = dateObj.getMonth() + 1;
+            cronSpec = `${minute} ${hour} ${day} ${month} *`;
         }
 
         setIsSaving(true);
@@ -212,30 +226,60 @@ export function MISScheduleModal({ reportId, currentFilters, onClose }: MISSched
 
                             <div className="grid grid-cols-2 gap-4">
                                 {/* Frequency */}
-                                <div>
+                                <div className={frequency === 'once' ? "col-span-2" : "col-span-1"}>
                                     <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
                                         <CalendarDays className="h-3.5 w-3.5" /> Frequency
                                     </label>
                                     <select
                                         value={frequency}
                                         onChange={(e) => setFrequency(e.target.value)}
-                                        className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 cursor-pointer"
+                                        className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 cursor-pointer bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 20 20%22><path stroke=%22%236b7280%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 stroke-width=%221.5%22 d=%22M6 8l4 4 4-4%22/></svg>')] bg-no-repeat bg-[right_10px_center] bg-[length:16px] pr-8"
                                     >
+                                        <option value="once">Once (Specific Date)</option>
                                         <option value="daily">Daily</option>
                                         <option value="weekly">Weekly (Monday)</option>
                                         <option value="monthly">Monthly (1st)</option>
                                     </select>
                                 </div>
 
+                                {/* Conditional Date */}
+                                {frequency === 'once' && (
+                                    <div className="col-span-1">
+                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                                            <CalendarRange className="h-3.5 w-3.5" /> Date
+                                        </label>
+                                        <div className="relative group">
+                                            <input
+                                                type="date"
+                                                value={specificDate}
+                                                onChange={(e) => setSpecificDate(e.target.value)}
+                                                onClick={(e) => {
+                                                    try { e.currentTarget.showPicker(); } catch {}
+                                                }}
+                                                className="w-full text-sm font-semibold text-stone-900 bg-gray-50 hover:bg-white border border-gray-200 rounded-xl pl-10 pr-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-200 shadow-sm hover:border-emerald-300 cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-datetime-edit]:py-0"
+                                            />
+                                            <CalendarRange className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500/70 group-hover:text-emerald-600 transition-colors pointer-events-none" />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Time */}
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Time</label>
-                                    <input
-                                        type="time"
-                                        value={time}
-                                        onChange={(e) => setTime(e.target.value)}
-                                        className="w-full text-sm font-semibold text-stone-900 bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 cursor-pointer"
-                                    />
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                                        <Clock className="h-3.5 w-3.5" /> Time
+                                    </label>
+                                    <div className="relative group">
+                                        <input
+                                            type="time"
+                                            value={time}
+                                            onChange={(e) => setTime(e.target.value)}
+                                            onClick={(e) => {
+                                                try { e.currentTarget.showPicker(); } catch {}
+                                            }}
+                                            className="w-full text-sm font-semibold text-stone-900 bg-gray-50 hover:bg-white border border-gray-200 rounded-xl pl-10 pr-3 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition-all duration-200 shadow-sm hover:border-emerald-300 cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:inset-0"
+                                        />
+                                        <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500/70 group-hover:text-emerald-600 transition-colors pointer-events-none" />
+                                    </div>
                                 </div>
                             </div>
 
