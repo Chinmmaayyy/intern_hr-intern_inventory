@@ -211,15 +211,21 @@ export function UniversalReportShell({
     // Serialise ALL current params into a stable string for the useEffect dep.
     const searchParamsKey = searchParams.toString();
 
+    const iso = (d: Date) => d.toISOString().split('T')[0];
+
     useEffect(() => {
         if (!isMounted.current) {
             isMounted.current = true;
             return;
         }
 
+        const today = new Date();
+        const thirtyAgo = new Date();
+        thirtyAgo.setDate(today.getDate() - 30);
+
         const currentFilters: Record<string, string | undefined> = {
-            date_start: startDate || undefined,
-            date_end: endDate || undefined,
+            date_start: startDate || iso(thirtyAgo),
+            date_end: endDate || iso(today),
             doctor_id: doctor || undefined,
             department_id: department_id || undefined,
             bill_type: bill_type || undefined,
@@ -269,9 +275,13 @@ export function UniversalReportShell({
         return Math.max(count, 1);
     }, [columns]);
 
+    const todayDate = new Date();
+    const thirtyAgoDate = new Date();
+    thirtyAgoDate.setDate(todayDate.getDate() - 30);
+
     const exportFilters = {
-        date_start: startDate || undefined,
-        date_end: endDate || undefined,
+        date_start: startDate || todayDate.toISOString().split('T')[0], // Note: this is actually thirtyAgo, but we can reuse iso helper. Wait, let's just do it directly:
+        date_end: endDate || todayDate.toISOString().split('T')[0],
         doctor_id: doctor || undefined,
         department_id: department_id || undefined,
         bill_type: bill_type || undefined,
@@ -280,6 +290,8 @@ export function UniversalReportShell({
         branch_id: branch_id || undefined,
         service_category: service_category || undefined,
     };
+    // Fix exportFilters date_start logic correctly
+    exportFilters.date_start = startDate || thirtyAgoDate.toISOString().split('T')[0];
 
     if (rows.length === 0 && !isRefetching) {
         return (
