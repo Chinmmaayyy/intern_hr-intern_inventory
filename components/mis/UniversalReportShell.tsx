@@ -42,6 +42,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { MISFilterEngine } from '@/components/mis/MISFilterEngine';
@@ -50,7 +51,7 @@ import { ExportPDFButton } from '@/components/mis/ExportPDFButton';
 import { MISScheduleModal } from '@/components/mis/MISScheduleModal';
 import {
     BarChart3, ChevronDown, ChevronLeft, ChevronRight,
-    Inbox, Clock4, ShieldOff, X, Download, Loader2,
+    Inbox, Clock4, ShieldOff, X, Download, Loader2, PanelRight,
 } from 'lucide-react';
 import { generateReport, getReportColumns } from '@/app/actions/mis-report-actions';
 
@@ -751,9 +752,11 @@ function DrillDownWrapper({
                 />
             )}
 
-            {/* ── Drill-Down Panel ──────────────────────────────────────────────── */}
+            {/* ── Drill-Down Drawer ─────────────────────────────────────────────── */}
+            {/* Rendered via ReactDOM.createPortal() into document.body — escapes         */}
+            {/* the parent overflow/stacking context and clears all sticky z-layers.       */}
             {drillRow && (
-                <DrillDownPanel
+                <DrillDownDrawer
                     loading={drillLoading}
                     error={drillError}
                     name={drillName}
@@ -915,9 +918,40 @@ function Paginator({ current, total, rowsOnPage, totalRows, onPrev, onNext, onPa
     );
 }
 
-// ─── DrillDownPanel ───────────────────────────────────────────────────────────
+// ─── DrillDownDrawer ──────────────────────────────────────────────────────────
+//
+// Replaces the former inline DrillDownPanel with a right-anchored side drawer
+// rendered via ReactDOM.createPortal() directly into document.body.
+//
+// ## Why a portal?
+//   The parent table card uses `overflow-hidden` (for rounded corners) and its
+//   own stacking context. A portal escapes both entirely, allowing the drawer
+//   to span the full viewport height regardless of DOM nesting.
+//
+// ## z-index layering
+//   Backdrop: z-[200]  — clears all sticky sidebars / headers (typically z-10–z-50).
+//   Drawer:   z-[201]  — sits above the backdrop.
+//   MISScheduleModal does not specify an explicit z-index, so there is no
+//   collision risk.
+//
+// ## Next.js App Router SSR safety
+//   `document.body` does not exist during server-side rendering. A `mounted`
+//   boolean (set by a useEffect on first render) gates the createPortal call,
+//   ensuring it only executes after client-side hydration.
+//
+// ## Slide-in animation
+//   The drawer starts at CSS transform translateX(100%) and transitions to
+//   translateX(0) via requestAnimationFrame after the initial paint, so the
+//   browser's transition engine captures the full delta. This avoids the need
+//   for external animation libraries and works with Tailwind v4.
+//
+// ## Accessibility
+//   - role="dialog" + aria-modal="true" + aria-labelledby (title id)
+//   - Escape key closes (keydown listener on window, capture phase)
+//   - Close button receives focus on open (ref + useEffect)
+//   - Body overflow is locked to prevent background scroll while open
 
-interface DrillDownPanelProps {
+interface DrillDownDrawerProps {
     loading: boolean;
     error: string | null;
     name: string;
@@ -926,59 +960,104 @@ interface DrillDownPanelProps {
     onClose: () => void;
 }
 
-/**
- * Rendered below the main table card when the user clicks a drillable row.
- *
- * Visual design:
- *  - Animated slide-down entrance
- *  - Left border accent in emerald-500 (signals "child of" relationship)
- *  - Header: "↳ Detail: {reportName}" + close ×
- *  - Loading: 6 pulsing skeleton rows
- *  - Error: inline rose-tinted alert
- *  - Data: same formatCell / ALIGN_CLASS helpers as the parent table
- *  - Empty: brief "No matching records" notice
- */
-function DrillDownPanel({ loading, error, name, columns, payload, onClose }: DrillDownPanelProps) {
-    const rows = payload?.rows ?? [];
-    const totals = payload?.totals ?? {};
+function DrillDownDrawer({ loading, error, name, columns, payload, onClose }: DrillDownDrawerProps) {
 
+    // ── SSR mount guard ──────────────────────────────────────────────────────
+    // createPortal is only safe after client-side hydration.
+    const [mounted, setMounted] = useState(false);
+
+    // ── Slide-in animation trigger ───────────────────────────────────────────
+    // translateX(100%) → translateX(0) after first paint.
+    const [isVisible, setIsVisible] = useState(false);
+
+    // ── Excel export state ───────────────────────────────────────────────────
     const [excelExporting, setExcelExporting] = useState(false);
 
+    // ── Refs ─────────────────────────────────────────────────────────────────
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+    // Stable, unique ID prefix for aria-labelledby — never changes for this instance.
+    const titleId = useRef(`mis-drawer-title-${Math.random().toString(36).slice(2, 9)}`).current;
+
+    // ── 1. Hydration guard — enable portal after first client render ─────────
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // ── 2. Body scroll lock ──────────────────────────────────────────────────
+    // Captures the previous overflow value so nested modals restore correctly.
+    useEffect(() => {
+        if (!mounted) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [mounted]);
+
+    // ── 3. Trigger slide-in animation after first paint ──────────────────────
+    useEffect(() => {
+        if (!mounted) return;
+        const raf = requestAnimationFrame(() => setIsVisible(true));
+        return () => cancelAnimationFrame(raf);
+    }, [mounted]);
+
+    // ── 4. Escape key to close ───────────────────────────────────────────────
+    // Registered in capture phase so it fires before any child stopPropagation.
+    useEffect(() => {
+        if (!mounted) return;
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', handler, { capture: true });
+        return () => window.removeEventListener('keydown', handler, { capture: true });
+    }, [mounted, onClose]);
+
+    // ── 5. Auto-focus close button on open ──────────────────────────────────
+    // Moves keyboard focus into the dialog for accessibility.
+    useEffect(() => {
+        if (mounted && closeButtonRef.current) {
+            closeButtonRef.current.focus();
+        }
+    }, [mounted]);
+
+    // ── CSV export ────────────────────────────────────────────────────────────
     const exportCsv = () => {
-        if (!payload || !payload.rows || payload.rows.length === 0) return;
-        const rowKeys = columns.map(c => c.key);
-        const headers = columns.map(c => `"${String(c.label).replace(/"/g, '""')}"`).join(',');
-        const csvRows = payload.rows.map(r =>
-            rowKeys.map(k => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(',')
+        if (!payload?.rows?.length) return;
+        const rowKeys = columns.map((c) => c.key);
+        const headers = columns
+            .map((c) => `"${String(c.label).replace(/"/g, '""')}"`)
+            .join(',');
+        const csvRows = payload.rows.map((r) =>
+            rowKeys.map((k) => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(',')
         );
         const csv = [headers, ...csvRows].join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = `${name}-detail.csv`; a.click();
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name}-detail.csv`;
+        a.click();
         URL.revokeObjectURL(url);
     };
 
+    // ── Excel export ──────────────────────────────────────────────────────────
     const exportExcel = async () => {
-        if (!payload || !payload.rows || payload.rows.length === 0) return;
+        if (!payload?.rows?.length) return;
         setExcelExporting(true);
         try {
             const xlsxModule = await import('xlsx');
             const XLSX = xlsxModule.default ?? xlsxModule;
 
-            const exportRows = payload.rows.map(r => {
+            const exportRows = payload.rows.map((r) => {
                 const row: Record<string, unknown> = {};
-                columns.forEach(c => {
-                    row[c.label] = r[c.key] ?? '';
-                });
+                columns.forEach((c) => { row[c.label] = r[c.key] ?? ''; });
                 return row;
             });
 
             const ws = XLSX.utils.json_to_sheet(exportRows);
-
-            ws['!cols'] = columns.map(c => {
+            ws['!cols'] = columns.map((c) => {
                 const maxDataLen = payload.rows!.reduce((max, r) => {
-                    const val = String(r[c.key] ?? '');
-                    return Math.max(max, val.length);
+                    return Math.max(max, String(r[c.key] ?? '').length);
                 }, 0);
                 return { wch: Math.max((c.label || '').length, maxDataLen, 10) + 2 };
             });
@@ -987,211 +1066,336 @@ function DrillDownPanel({ loading, error, name, columns, payload, onClose }: Dri
             XLSX.utils.book_append_sheet(wb, ws, 'Detail Data');
             XLSX.writeFile(wb, `${name}-detail.xlsx`);
         } catch (err) {
-            console.error('Excel export failed:', err);
+            console.error('[MIS Drawer] Excel export failed:', err);
             alert('Excel export failed. Please try again.');
         } finally {
             setExcelExporting(false);
         }
     };
 
-    return (
-        <div
-            className="bg-white rounded-2xl border border-gray-200 border-l-4 border-l-emerald-500 shadow-md overflow-hidden animate-in slide-in-from-top-2 duration-200"
-            role="region"
-            aria-label={`Detail view: ${name}`}
-        >
-            {/* Panel header */}
-            <div className="px-6 py-3.5 border-b border-gray-100 bg-emerald-50/50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <ChevronDown className="h-3.5 w-3.5 text-emerald-600 rotate-[-90deg]" aria-hidden="true" />
-                    <span className="text-[12px] font-bold text-stone-900">
-                        ↳ Detail: <span className="text-emerald-700">{name}</span>
-                    </span>
-                    {!loading && !error && payload && (
-                        <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                            {rows.length} {rows.length === 1 ? 'row' : 'rows'}
-                        </span>
-                    )}
-                </div>
-                <div className="flex items-center gap-3">
-                    {!loading && !error && payload && !payload.error && rows.length > 0 && (
-                        <div className="flex items-center gap-1.5 mr-2">
-                            <button
-                                type="button"
-                                onClick={exportCsv}
-                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-md transition-colors"
-                            >
-                                <Download className="h-3 w-3" />
-                                CSV
-                            </button>
-                            <button
-                                type="button"
-                                onClick={exportExcel}
-                                disabled={excelExporting}
-                                className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 px-2.5 py-1 rounded-md transition-colors"
-                            >
-                                {excelExporting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-                                Excel
-                            </button>
+    // ── SSR guard — must appear after ALL hooks (Rules of Hooks) ────────────
+    if (!mounted) return null;
+
+    // ── Derived display state ─────────────────────────────────────────────────
+    const rows    = payload?.rows   ?? [];
+    const totals  = payload?.totals ?? {};
+    const hasData =
+        !loading && !error && payload && !payload.error &&
+        rows.length > 0 && columns.length > 0;
+
+    // Compute leading non-total column span for the subtotals row.
+    let drawerLeadingSpan = 0;
+    for (const col of columns) {
+        if (col.total) break;
+        drawerLeadingSpan++;
+    }
+    drawerLeadingSpan = Math.max(drawerLeadingSpan, 1);
+
+    // ── Shared animation easing ───────────────────────────────────────────────
+    const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Portal content — backdrop + drawer panel rendered into document.body
+    // ─────────────────────────────────────────────────────────────────────────
+    const drawerContent = (
+        <>
+            {/* ── Backdrop ─────────────────────────────────────────────────── */}
+            {/* Click closes the drawer; aria-hidden hides it from screen readers */}
+            <div
+                aria-hidden="true"
+                onClick={onClose}
+                style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 200,
+                    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+                    backdropFilter: 'blur(2px)',
+                    WebkitBackdropFilter: 'blur(2px)',
+                    // Fade in with the drawer
+                    opacity: isVisible ? 1 : 0,
+                    transition: `opacity 0.25s ${EASE}`,
+                }}
+            />
+
+            {/* ── Drawer panel ─────────────────────────────────────────────── */}
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                style={{
+                    position: 'fixed',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 201,
+                    // 900 px on wide screens; 92 vw on tablets/small laptops — no edge cramping.
+                    width: 'min(92vw, 900px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    backgroundColor: '#ffffff',
+                    // Left shadow creates depth separation from the backdrop.
+                    boxShadow: '-8px 0 40px rgba(0,0,0,0.12), -1px 0 0 rgba(0,0,0,0.06)',
+                    // Emerald left-border accent — visual "child of" indicator.
+                    borderLeft: '4px solid #10b981',
+                    // Slide-in from right: starts off-screen, transitions to position.
+                    transform: isVisible ? 'translateX(0)' : 'translateX(100%)',
+                    transition: `transform 0.3s ${EASE}`,
+                }}
+            >
+                {/* ── Sticky drawer header ─────────────────────────────────── */}
+                {/* z-10 keeps it above the scrollable table body below. */}
+                <div
+                    style={{ flexShrink: 0, zIndex: 10, borderBottom: '1px solid #d1fae5' }}
+                    className="sticky top-0 px-5 py-3.5 bg-emerald-50/70 flex items-center justify-between gap-3"
+                >
+                    {/* Left: icon + title + row count pill */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="shrink-0 p-1.5 bg-emerald-100 rounded-lg">
+                            <PanelRight className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
                         </div>
-                    )}
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                        aria-label="Close detail panel"
-                    >
-                        <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                </div>
-            </div>
-
-            {/* ── Loading skeleton ──────────────────────────────────────────── */}
-            {loading && (
-                <div className="px-6 py-4 space-y-3" aria-busy="true" aria-label="Loading detail data">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                        <div key={i} className="flex gap-4 animate-pulse">
-                            <div className="h-4 bg-gray-200 rounded flex-1" style={{ opacity: 1 - i * 0.12 }} />
-                            <div className="h-4 bg-gray-200 rounded w-24" style={{ opacity: 1 - i * 0.12 }} />
-                            <div className="h-4 bg-gray-200 rounded w-28" style={{ opacity: 1 - i * 0.12 }} />
+                        <div className="min-w-0">
+                            <p
+                                id={titleId}
+                                className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 truncate"
+                            >
+                                ↳ Detail Report
+                            </p>
+                            <p className="text-[13px] font-black text-stone-900 truncate leading-tight">
+                                {name || 'Loading…'}
+                            </p>
                         </div>
-                    ))}
-                </div>
-            )}
-
-            {/* ── Error state ───────────────────────────────────────────────── */}
-            {!loading && error && (
-                <div className="px-6 py-5 flex items-start gap-3">
-                    <div className="p-2 bg-rose-50 rounded-xl shrink-0">
-                        <X className="h-4 w-4 text-rose-500" aria-hidden="true" />
+                        {/* Row count — shown only when data is fully loaded */}
+                        {!loading && !error && payload && !payload.error && (
+                            <span className="shrink-0 text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                {rows.length} {rows.length === 1 ? 'row' : 'rows'}
+                            </span>
+                        )}
                     </div>
-                    <div>
-                        <p className="text-sm font-bold text-stone-900">Failed to load details</p>
-                        <p className="text-xs text-rose-600 mt-0.5 leading-relaxed">{error}</p>
+
+                    {/* Right: export buttons + close */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        {/* Export buttons — only rendered when data is available */}
+                        {hasData && (
+                            <div className="flex items-center gap-1.5 mr-1 pr-3 border-r border-emerald-200">
+                                <button
+                                    type="button"
+                                    onClick={exportCsv}
+                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1.5 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    aria-label="Export detail data as CSV"
+                                >
+                                    <Download className="h-3 w-3" aria-hidden="true" />
+                                    CSV
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={exportExcel}
+                                    disabled={excelExporting}
+                                    className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 px-2.5 py-1.5 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    aria-label="Export detail data as Excel"
+                                >
+                                    {excelExporting
+                                        ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                        : <Download className="h-3 w-3" aria-hidden="true" />
+                                    }
+                                    Excel
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Close button — receives focus on drawer open */}
+                        <button
+                            ref={closeButtonRef}
+                            type="button"
+                            onClick={onClose}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                            aria-label="Close detail drawer (Escape)"
+                        >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
                     </div>
                 </div>
-            )}
 
-            {/* ── UNAUTHORIZED from drill-down generateReport ───────────────── */}
-            {!loading && !error && payload?.error === 'UNAUTHORIZED' && (
-                <div className="px-6 py-5 flex items-center gap-3">
-                    <ShieldOff className="h-5 w-5 text-red-400 shrink-0" aria-hidden="true" />
-                    <p className="text-sm text-gray-500">
-                        You don&apos;t have permission to view the detail for this report.
-                    </p>
-                </div>
-            )}
+                {/* ── Scrollable drawer body ───────────────────────────────── */}
+                {/* flex-1 + overflow-y-auto gives independent scroll from the parent. */}
+                {/* overflow-x-auto on the table wrapper handles wide column sets.    */}
+                <div className="flex-1 overflow-y-auto">
 
-            {/* ── Empty detail set ──────────────────────────────────────────── */}
-            {!loading && !error && payload && !payload.error && rows.length === 0 && (
-                <div className="px-6 py-6 flex items-center gap-3 text-gray-400">
-                    <Inbox className="h-5 w-5 shrink-0" aria-hidden="true" />
-                    <p className="text-sm">No matching records found for this selection.</p>
-                </div>
-            )}
-
-            {/* ── Data table ────────────────────────────────────────────────── */}
-            {!loading && !error && payload && !payload.error && rows.length > 0 && columns.length > 0 && (
-                <div className="overflow-x-auto">
-                    <table
-                        className="w-full text-sm border-collapse"
-                        style={{ minWidth: `${Math.max(columns.length * 140, 700)}px` }}
-                    >
-                        <thead>
-                            <tr className="bg-gray-50 border-b border-gray-100">
-                                {columns.map((col) => (
-                                    <th
-                                        key={col.key}
-                                        scope="col"
-                                        className={`
-                                            px-5 py-2.5
-                                            text-[10px] font-bold uppercase tracking-widest
-                                            text-gray-500 whitespace-nowrap select-none
-                                            ${ALIGN_CLASS[effectiveAlign(col)]}
-                                        `}
-                                    >
-                                        {col.label}
-                                    </th>
+                    {/* ── Loading skeleton ─────────────────────────────────── */}
+                    {loading && (
+                        <div
+                            className="px-6 py-6 space-y-3"
+                            aria-busy="true"
+                            aria-label="Loading detail data"
+                        >
+                            {/* Skeleton header row */}
+                            <div className="flex gap-4 pb-3 border-b border-gray-100 animate-pulse">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="h-3 bg-gray-200 rounded-full flex-1"
+                                        style={{ opacity: 1 - i * 0.1 }}
+                                    />
                                 ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map((row, idx) => {
-                                const isEven = idx % 2 === 0;
-                                return (
-                                    <tr
-                                        key={idx}
-                                        className={`
-                                            border-b border-gray-50
-                                            transition-colors duration-100
-                                            hover:bg-emerald-50/30
-                                            ${isEven ? 'bg-white' : 'bg-gray-50/20'}
-                                        `}
-                                    >
-                                        {columns.map((col) => {
-                                            const isNumeric =
-                                                col.type === 'currency' ||
-                                                col.type === 'number' ||
-                                                col.type === 'percent';
-                                            return (
-                                                <td
-                                                    key={col.key}
-                                                    className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
-                                                >
-                                                    <DataCell
-                                                        value={row[col.key]}
-                                                        type={col.type}
-                                                        isNumeric={isNumeric}
-                                                    />
-                                                </td>
-                                            );
-                                        })}
+                            </div>
+                            {/* Skeleton data rows */}
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <div key={i} className="flex gap-4 animate-pulse">
+                                    <div className="h-4 bg-gray-200 rounded flex-1"  style={{ opacity: 1 - i * 0.1 }} />
+                                    <div className="h-4 bg-gray-200 rounded w-24" style={{ opacity: 1 - i * 0.1 }} />
+                                    <div className="h-4 bg-gray-200 rounded w-28" style={{ opacity: 1 - i * 0.1 }} />
+                                    <div className="h-4 bg-gray-200 rounded w-20" style={{ opacity: 1 - i * 0.1 }} />
+                                    <div className="h-4 bg-gray-200 rounded w-16" style={{ opacity: 1 - i * 0.1 }} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* ── Error state ───────────────────────────────────────── */}
+                    {!loading && error && (
+                        <div className="px-6 py-8 flex items-start gap-3">
+                            <div className="p-2 bg-rose-50 rounded-xl shrink-0">
+                                <X className="h-4 w-4 text-rose-500" aria-hidden="true" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-stone-900">Failed to load details</p>
+                                <p className="text-xs text-rose-600 mt-1 leading-relaxed">{error}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── UNAUTHORIZED state ────────────────────────────────── */}
+                    {!loading && !error && payload?.error === 'UNAUTHORIZED' && (
+                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                            <div className="p-3.5 bg-red-50 border border-red-100 rounded-2xl mb-4 inline-flex">
+                                <ShieldOff className="h-7 w-7 text-red-400" aria-hidden="true" />
+                            </div>
+                            <p className="text-sm font-bold text-stone-900 mb-1">Access Denied</p>
+                            <p className="text-xs text-gray-500 max-w-xs leading-relaxed">
+                                You don&apos;t have permission to view the detail for this report.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* ── Empty state ───────────────────────────────────────── */}
+                    {!loading && !error && payload && !payload.error && rows.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                            <div className="p-3.5 bg-gray-100 rounded-2xl mb-4 inline-flex">
+                                <Inbox className="h-7 w-7 text-gray-400" aria-hidden="true" />
+                            </div>
+                            <p className="text-sm font-bold text-stone-900 mb-1">No records found</p>
+                            <p className="text-xs text-gray-500 max-w-xs leading-relaxed">
+                                No matching records found for this selection.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* ── Data table ────────────────────────────────────────── */}
+                    {/* overflow-x-auto here (not on the panel) so the sticky header    */}
+                    {/* stays pinned while the user scrolls dense wide tables.           */}
+                    {hasData && (
+                        <div className="overflow-x-auto" role="region" aria-label={`${name} detail data table`}>
+                            <table
+                                className="w-full text-sm border-collapse"
+                                style={{ minWidth: `${Math.max(columns.length * 140, 700)}px` }}
+                            >
+                                {/* thead */}
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-100">
+                                        {columns.map((col) => (
+                                            <th
+                                                key={col.key}
+                                                scope="col"
+                                                className={`
+                                                    px-5 py-3
+                                                    text-[10px] font-bold uppercase tracking-widest
+                                                    text-gray-500 whitespace-nowrap select-none
+                                                    ${ALIGN_CLASS[effectiveAlign(col)]}
+                                                `}
+                                            >
+                                                {col.label}
+                                            </th>
+                                        ))}
                                     </tr>
-                                );
-                            })}
-                        </tbody>
-                        {/* Totals row for drill-down detail */}
-                        {columns.some((c) => c.total) && Object.keys(totals).length > 0 && (() => {
-                            let leading = 0;
-                            for (const col of columns) {
-                                if (col.total) break;
-                                leading++;
-                            }
-                            const leadingSpan = Math.max(leading, 1);
-                            return (
-                                <tfoot>
-                                    <tr className="bg-gray-50 border-t-2 border-gray-200">
-                                        <td colSpan={leadingSpan} className="px-5 py-3">
-                                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                                                Subtotal
-                                            </span>
-                                        </td>
-                                        {columns.slice(leadingSpan).map((col) => {
-                                            const tv = col.total && totals[col.key] !== undefined
-                                                ? totals[col.key]
-                                                : undefined;
-                                            return (
-                                                <td
-                                                    key={col.key}
-                                                    className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
-                                                >
-                                                    {tv !== undefined ? (
-                                                        <span className="font-black text-[13px] text-stone-900 tabular-nums">
-                                                            {formatCell(tv, col.type)}
-                                                        </span>
-                                                    ) : null}
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                </tfoot>
-                            );
-                        })()}
-                    </table>
-                </div>
-            )}
-        </div>
+                                </thead>
+
+                                {/* tbody */}
+                                <tbody>
+                                    {rows.map((row, idx) => {
+                                        const isEven = idx % 2 === 0;
+                                        return (
+                                            <tr
+                                                key={idx}
+                                                className={`
+                                                    border-b border-gray-50
+                                                    transition-colors duration-100
+                                                    hover:bg-emerald-50/30
+                                                    ${isEven ? 'bg-white' : 'bg-gray-50/20'}
+                                                `}
+                                            >
+                                                {columns.map((col) => {
+                                                    const isNumeric =
+                                                        col.type === 'currency' ||
+                                                        col.type === 'number' ||
+                                                        col.type === 'percent';
+                                                    return (
+                                                        <td
+                                                            key={col.key}
+                                                            className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
+                                                        >
+                                                            <DataCell
+                                                                value={row[col.key]}
+                                                                type={col.type}
+                                                                isNumeric={isNumeric}
+                                                            />
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+
+                                {/* tfoot — server-authoritative subtotals row */}
+                                {columns.some((c) => c.total) && Object.keys(totals).length > 0 && (
+                                    <tfoot>
+                                        <tr className="bg-gray-50 border-t-2 border-gray-200">
+                                            <td colSpan={drawerLeadingSpan} className="px-5 py-3">
+                                                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                                                    Subtotal
+                                                </span>
+                                            </td>
+                                            {columns.slice(drawerLeadingSpan).map((col) => {
+                                                const tv =
+                                                    col.total && totals[col.key] !== undefined
+                                                        ? totals[col.key]
+                                                        : undefined;
+                                                return (
+                                                    <td
+                                                        key={col.key}
+                                                        className={`px-5 py-3 whitespace-nowrap ${ALIGN_CLASS[effectiveAlign(col)]}`}
+                                                    >
+                                                        {tv !== undefined ? (
+                                                            <span className="font-black text-[13px] text-stone-900 tabular-nums">
+                                                                {formatCell(tv, col.type)}
+                                                            </span>
+                                                        ) : null}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    </tfoot>
+                                )}
+                            </table>
+                        </div>
+                    )}
+
+                </div>{/* end scrollable body */}
+
+            </div>{/* end drawer panel */}
+        </>
     );
+
+    return createPortal(drawerContent, document.body);
 }
 
 // ─── AsyncQueuedBanner ────────────────────────────────────────────────────────
